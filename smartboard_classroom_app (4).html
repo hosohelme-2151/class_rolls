@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smartboard Classroom App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- مكتبة html2canvas لتحويل التصميم إلى صورة قابلة للتحميل -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <style>
+    body {
+      font-family: Tahoma, Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f1f5f9;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    .preserve-3d { transform-style: preserve-3d; }
+    .perspective-1000 { perspective: 1000px; }
+    .backface-hidden { backface-visibility: hidden; }
+    .rotate-y-180 { transform: rotateY(180deg); }
+    
+    @keyframes fall {
+      0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+    }
+    .confetti-piece {
+      position: fixed;
+      top: -10px;
+      width: 15px;
+      height: 15px;
+      background-color: #f00;
+      animation: fall 3s linear forwards;
+      z-index: 50;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+    
+    @keyframes fade-in-up {
+      from { opacity: 0; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in-up { animation: fade-in-up 0.5s ease-out forwards; }
+
+    @keyframes scale-in-center {
+      0% { transform: scale(0); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .scale-in-center { animation: scale-in-center 0.5s cubic-bezier(0.250, 0.460, 0.450, 0.940) both; }
+
+    @keyframes alarm-glow {
+      0%, 100% { box-shadow: 0 0 50px rgba(225,29,72,0.4); }
+      50% { box-shadow: 0 0 90px rgba(225,29,72,0.9); }
+    }
+    .animate-alarm-glow { animation: alarm-glow 1s ease-in-out infinite; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    @media (min-width: 768px) { ::-webkit-scrollbar { width: 12px; height: 12px; } }
+    ::-webkit-scrollbar-track { background: #1e293b; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    .custom-scrollbar { overflow-y: auto; overflow-x: auto; }
+
+    /* Utilities */
+    .hidden-content { display: none !important; }
+    .max-h-0 { max-height: 0px; }
+    .max-h-96 { max-height: 24rem; }
+    .max-h-[600px] { max-height: 600px; }
+    .opacity-0 { opacity: 0; }
+    .opacity-100 { opacity: 1; }
+    
+    #app-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      height: 100vh;
+    }
+
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      padding-top: 6rem;
+      padding-bottom: 8rem;
+    }
+    @media (min-width: 768px) {
+      main { padding: 4rem; padding-top: 9rem; padding-bottom: 10rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app-container" class="selection:bg-purple-500/30">
+    <div id="confetti-container" class="fixed inset-0 pointer-events-none z-50 overflow-hidden hidden-content"></div>
+    <div id="timer-widget-container"></div>
+
+    <!-- Celebration Overlay -->
+    <div id="celebration-overlay" class="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none hidden-content bg-slate-950/70 backdrop-blur-sm transition-all duration-300">
+      <div class="scale-in-center flex flex-col items-center">
+        <div class="text-[8rem] md:text-[10rem] mb-4 drop-shadow-2xl animate-bounce">🌟</div>
+        <h2 id="celebration-name" class="text-6xl md:text-[7rem] font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-500 drop-shadow-[0_0_40px_rgba(245,158,11,1)] text-center tracking-wider py-4"></h2>
+        <p class="text-4xl md:text-5xl text-white font-bold mt-6 bg-slate-900/80 px-8 py-4 rounded-full border-4 border-yellow-500/50 shadow-xl">+ نقطة مشاركة مميزة!</p>
+      </div>
+    </div>
+
+    <main>
+      <div class="h-full flex items-center justify-center w-full" id="main-content">
+        <!-- Dynamic Content Injected Here -->
+      </div>
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t-2 md:border-t-4 border-slate-700 p-3 md:p-6 z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+      <div class="max-w-[100%] md:max-w-[90%] mx-auto flex justify-start md:justify-between gap-3 md:gap-4 overflow-x-auto custom-scrollbar pb-2 px-2" id="nav-container">
+        <!-- Tabs Injected Here -->
+      </div>
+    </nav>
+  </div>
+
+  <script>
+    let activeTab = 0;
+    let isPledged = false;
+
+    // Timer widget state
+    let timer_isOpen = false;
+    let timer_totalSeconds = 300;
+    let timer_remainingSeconds = 300;
+    let timer_isRunning = false;
+    let timer_isRinging = false;
+    let timer_intervalId = null;
+    let timer_ringIntervalId = null;
+    let timer_audioContext = null;
+
+    // Discipline System State
+    let db_selectedClass = null;
+    let db_activeStudent = null; 
+    let db_popup = null; // Used for Escalation Alerts and Tasks
+    let db_showWheel = false;
+    let db_wheelRotation = 0;
+    let db_isSpinning = false;
+    let disciplineLogs = JSON.parse(localStorage.getItem('disciplineLogs')) || [];
+
+    const PENALTY_TASKS = [
+      "تلخيص قصة قصيرة لنجيب محفوظ واستخراج الشخصيات الرئيسية.",
+      "استخراج 20 كلمة تبدأ بهمزة قطع و 20 كلمة بهمزة وصل.",
+      "كتابة موضوع تعبير عن أهمية احترام الوقت وتنظيمه.",
+      "إعراب 5 جمل اسمية و 5 جمل فعلية إعراباً كاملاً.",
+      "البحث عن 10 أبيات شعرية تتحدث عن الأخلاق وحفظها.",
+      "جمع 15 كلمة تحتوي على تاء مربوطة و 15 كلمة بها هاء مغلقة."
+    ];
+
+    const g9aStudents = [
+      "Abdelrahman Mahmoud Mohamed Ahmed", "Abdelrahman Mosaad El-Shahat Mohamed", "Abdelrahman Nehad Youssef Elsayed Youssef", 
+      "Adam Hossam Abuhantesh Abdelmaguid Ahmed", "Adham Mohamed Nabil Abdullah Osman", "Ahmed Mosaad El-Shahat Mohamed Shagar", 
+      "Ahmed Sabry Ghandy Abdelwahab Mostafa", "Ali Khalid Mohamed Ali Heggy", "Celina Osama Khalil Ebrahim Ali", "Celine Samer Farag Atta Salem", 
+      "Diana Ahmed Salah Shaker Elguindy", "Hanan Abdelrazek Mohamed Abdelhafeez Mohamed", "Jiana Ayman Abdel-Maksoud Mohamed", 
+      "Jovani Benyamin Hosny Nakhla Hens", "Kenzy Hossam El-Deen Mohamed Mohamed", "Lamar Walid Mohamed Abdelrahman Elramli", 
+      "Lamis Sherif Abdelmoneim Hassan Abdallah", "Malak Mohamed Tamer Mohamed Hamdy Mohamed Saleh", "Malak Ramy Salah El-Deen Abdel-Gawad Atteya", 
+      "Malek Rami Mohamed Abdelrahman Mostafa", "Mohamed Abdallah Mohamed Saber Mohamed Khalil", "Mohamed Hany Said Mohamed Mohamed Mansour", 
+      "Nour Mohamed Tamer Mohamed Hamdy Mohamed Saleh", "Omar Mohamed Ali Yassin Hassan", "Omar Mohamed Mostafa Mohamed Ahmed", 
+      "Omar Mohamed Rashad Abdelkawi Radwan", "Salma Ehab Awad Abdel-Lateef Ebrahim", "Sami Mohamed Sami Hashem Gomaa", 
+      "Yassin Ahmed Mohamed Mohamed", "Yassin Ossama Mohamed Hamza Mohamed Beshir Elkassas", "Youssef Wagdy Wadea Eskandar Maseeha", 
+      "Zein Ahmed Abubakr"
+    ];
+
+    const g9bStudents = [
+      "Abdelaziz Ahmed Mohamed Amin Kotb", "Adam Ahmed Anas Abdel-Hamid", "Adam Ahmed Fouad Fouad Farag Youssef",
+      "Basel Ahmed Emam Mohamed Mohamed", "Dina Mahmoud Maher Medhat Helmy Ebrahim", "Eyad Walid Sayed Mahmoud Othman Sakr",
+      "Ezz Ahmed Mohamed Helmy Mahmoud Mosaad", "Farah Ahmed Rashed Ragab Gadallah Elnaggar", "Farida Ahmed Mohamed Helmy Mosaad",
+      "Fouad Amr Mohamed El-Sayed Mostafa", "Hala Alaa-Aldeen Gomaa Awad-Allah Ahmed", "Hussein Mohamed Hussein Zaki Hassanein",
+      "Jana Mohamed Atrees Hisham Mahmoud", "Laila Hesham Mostafa Ali Badran", "Malak Mohanad Ahmed Ahmed Wadi",
+      "Marah Mohsen Mohamed Ahmed Emara", "Marwan Amr Ahmed Mabrouk Abdelhalim Zaghloul", "Merna Osama Abdel-Razik Abdel-Hakeem Ahmed",
+      "Mohanad Tamer Mohamed Tawfik Mohamed Elsheneity", "Mostafa Hesham Mostafa Ali Badran", "Nouh Ibrahim Gamil Hussein Mady",
+      "Nour Mohamed Ahmed Goda Metwaly", "Omar Desouki Sayed Aly Diab", "Sara Emadeldin Abdelmoneim Abdelhamid",
+      "Seif Osama Youssef Saad El-Helal", "Yassin Mohamed Mahmoud Yassin El-Gendy", "Yassin Wael Ahmed Abdelfattah Ahmed Mahmioud Zayed",
+      "Youssef Mohamed Metwali Ahmed Othman", "Zeyad Amr Mahmoud Zeineldin Elmahrakawy", "Ziad Mostafa Esmail Mohamed El-Soudy"
+    ];
+
+    const g10aStudents = [
+      "Adam Ahmed Atteya Ahmed Mohamed Bedir", "Adam Mohamed Mohamed Galal El-Deen", "Adham Ahmed Wageh Ahmed Abdullah",
+      "Ahmed Wael Ahmed Badran Helal", "Ahmed Waleed Shehata Mohamed Kasem", "Dania Ady Abdel-Hay Mohamed Abdel-Wahed",
+      "Ebrahim Essam Ebrahim Mohamed Eissa", "Emy Mohamed Sayed Omar Elsayed", "Iwan Ahmed Abdallah Mohamed Emran",
+      "Jana Mohamed Hamed Saleh Abdel-Rahman", "Joumana Tarek Abdel-Rahman Mohamed Al-", "Kareem Ahmed Kamal Tolba Mohamed",
+      "Logine Omar Fathy Thabet Abdelhamid", "Maisoon Mahmoud Mohmed Mahmoud", "Malak Khaled Abdelfattah Mohamed",
+      "Malak Walid Mostafa Saad Anees", "Mariem Ahmed Aabbas Emam Ahmed", "Mariem Mohamed Saad Ali Ahmed",
+      "Masa Ahmed Mohamed El-Sawy Abo-Khatwa", "Mohamed Abdel-Fattah Mostafa Mohamed", "Omar Ossama Ali Mohamed Soliman",
+      "Rahma Taher Hussein Magdy Abdo El-Azhary", "Sahar Khaled Mahmoud Rateb El-Gaony", "Seif Tamer Ali Mohamed Abdelnaby Ahmed",
+      "Seif El-Deen Mostafa Mohamed Refaat Hussein", "Seif Medhat Abdullah Abdel-Hameed", "Yamin Mostafa Abdallah Mohamed Omran",
+      "Yassin Hany Mohamed Said Zakareya Gad", "Youssef Hany Zareef Abdel-Hameed Mohamed", "Youssef Moahmed Zakareya Ali Mohamed",
+      "Youssef Mostafa Mohamed Fathy Emam"
+    ];
+
+    let classData = {
+      G9A: g9aStudents.map((name, i) => ({ id: `9A-${i+1}`, num: i+1, name, status: null, question: '', answer: '', cls: 'G9A', participationScore: 10, escalationLevel: 0, toolsReady: false, assessmentDone: false })),
+      G9B: g9bStudents.map((name, i) => ({ id: `9B-${i+1}`, num: i+1, name, status: null, question: '', answer: '', cls: 'G9B', participationScore: 10, escalationLevel: 0, toolsReady: false, assessmentDone: false })),
+      G10A: g10aStudents.map((name, i) => ({ id: `10A-${i+1}`, num: i+1, name, status: null, question: '', answer: '', cls: 'G10A', participationScore: 10, escalationLevel: 0, toolsReady: false, assessmentDone: false }))
+    };
+
+    const iceBreakerQuestions = [
+      "لو كنت شخصية تاريخية، من ستكون ولماذا؟",
+      "ما هو أكثر شيء يحمسك في هذا العام الدراسي الجديد؟",
+      "ما هي ميزتك الخارقة التي تميزك عن غيرك؟",
+      "لو استطعت تغيير قانون واحد في العالم، ماذا سيكون؟",
+      "إذا أعطيت تذكرة سفر مجانية لأي مكان، أين ستذهب؟",
+      "ما هو أصعب شيء تعلمته وكيف تغلبت عليه؟"
+    ];
+
+    function renderApp() {
+      renderNav();
+      renderContent();
+      renderTimerWidget();
+      setTimeout(() => {
+        if(window.lucide) lucide.createIcons();
+      }, 0);
+    }
+
+    function setActiveTab(index) {
+      activeTab = index;
+      renderApp();
+      
+      if (isPledged && activeTab === 4) {
+        showConfetti();
+      } else {
+        hideConfetti();
+      }
+    }
+
+    function renderNav() {
+      const tabs = [
+        { title: "الترحيب", icon: "user" },
+        { title: "التعارف", icon: "users" },
+        { title: "أسئلة جوهرية", icon: "help-circle" },
+        { title: "الميثاق", icon: "scroll-text" },
+        { title: "التعهد", icon: "check-circle" },
+        { title: "الانضباط", icon: "shield-alert" },
+        { title: "النجوم", icon: "award" }
+      ];
+
+      const navContainer = document.getElementById('nav-container');
+      navContainer.innerHTML = tabs.map((tab, index) => {
+        const isActive = activeTab === index;
+        return `
+          <button
+            onclick="setActiveTab(${index})"
+            class="flex-1 flex flex-col items-center gap-2 md:gap-3 px-4 py-3 md:px-6 md:py-4 rounded-[1.5rem] md:rounded-[2rem] text-sm md:text-2xl font-bold transition-all duration-300 min-w-[100px] md:min-w-[160px] border-2 shrink-0
+            ${isActive 
+              ? 'bg-gradient-to-t from-indigo-600 to-blue-500 border-blue-400 text-white shadow-[0_0_30px_rgba(59,130,246,0.5)] md:-translate-y-2' 
+              : 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-700 hover:text-slate-200'}"
+          >
+            <i data-lucide="${tab.icon}" class="w-6 h-6 md:w-9 md:h-9 ${isActive ? 'animate-bounce' : ''}"></i>
+            <span>${tab.title}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function renderContent() {
+      const mainContent = document.getElementById('main-content');
+      mainContent.innerHTML = '';
+      
+      switch (activeTab) {
+        case 0: initTeacherIntro(mainContent); break;
+        case 1: initStudentRoster(mainContent); break;
+        case 2: initCoreQuestions(mainContent); break;
+        case 3: initClassCharter(mainContent); break;
+        case 4: initPledge(mainContent); break;
+        case 5: initDisciplineBoard(mainContent); break;
+        case 6: initLeaderboard(mainContent); break;
+      }
+    }
+
+    function showConfetti() {
+      const container = document.getElementById('confetti-container');
+      container.innerHTML = '';
+      container.classList.remove('hidden-content');
+      
+      const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+      for (let i = 0; i < 80; i++) {
+        const piece = document.createElement('div');
+        piece.className = 'confetti-piece';
+        piece.style.left = `${Math.random() * 100}vw`;
+        piece.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        piece.style.animationDuration = `${Math.random() * 2 + 2}s`;
+        piece.style.animationDelay = `${Math.random() * 0.5}s`;
+        piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
+        container.appendChild(piece);
+      }
+    }
+
+    function hideConfetti() {
+      document.getElementById('confetti-container').classList.add('hidden-content');
+      document.getElementById('confetti-container').innerHTML = '';
+    }
+
+    // ============ Floating Timer Widget ============
+    function timerFormat(totalSec) {
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function timerPlayChimeOnce() {
+      try {
+        if (!timer_audioContext) {
+          timer_audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = timer_audioContext;
+        if (ctx.state === 'suspended') ctx.resume();
+        const now = ctx.currentTime;
+        const notes = [880, 659.25, 880];
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          const t = now + i * 0.28;
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.4, t + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.55);
+        });
+      } catch (e) { console.error('Timer audio error:', e); }
+    }
+
+    function timerStartRinging() {
+      timer_isRinging = true;
+      timer_isOpen = true;
+      timerPlayChimeOnce();
+      timer_ringIntervalId = setInterval(timerPlayChimeOnce, 1800);
+      renderTimerWidget();
+    }
+
+    function timerStopRinging() {
+      timer_isRinging = false;
+      if (timer_ringIntervalId) { clearInterval(timer_ringIntervalId); timer_ringIntervalId = null; }
+    }
+
+    window.timerToggleOpen = function() {
+      if (timer_isRinging) { timer_isOpen = true; renderTimerWidget(); return; }
+      timer_isOpen = !timer_isOpen;
+      renderTimerWidget();
+    }
+
+    window.timerSetDuration = function(seconds) {
+      if (timer_isRunning) return;
+      timer_totalSeconds = seconds;
+      timer_remainingSeconds = seconds;
+      renderTimerWidget();
+    }
+
+    window.timerAdjust = function(deltaSeconds) {
+      if (timer_isRunning) return;
+      let next = timer_totalSeconds + deltaSeconds;
+      next = Math.max(30, Math.min(3600, next));
+      timer_totalSeconds = next;
+      timer_remainingSeconds = next;
+      renderTimerWidget();
+    }
+
+    window.timerStart = function() {
+      if (timer_remainingSeconds <= 0 || timer_isRunning) return;
+      if (!timer_audioContext) {
+        timer_audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (timer_audioContext.state === 'suspended') timer_audioContext.resume();
+
+      timer_isRunning = true;
+      timer_intervalId = setInterval(() => {
+        timer_remainingSeconds--;
+        if (timer_remainingSeconds <= 0) {
+          timer_remainingSeconds = 0;
+          clearInterval(timer_intervalId);
+          timer_intervalId = null;
+          timer_isRunning = false;
+          timerStartRinging();
+        } else {
+          renderTimerWidget();
+        }
+      }, 1000);
+      renderTimerWidget();
+    }
+
+    window.timerPause = function() {
+      if (timer_intervalId) { clearInterval(timer_intervalId); timer_intervalId = null; }
+      timer_isRunning = false;
+      renderTimerWidget();
+    }
+
+    window.timerReset = function() {
+      if (timer_intervalId) { clearInterval(timer_intervalId); timer_intervalId = null; }
+      timer_isRunning = false;
+      timer_remainingSeconds = timer_totalSeconds;
+      renderTimerWidget();
+    }
+
+    window.timerDismiss = function() {
+      timerStopRinging();
+      timerReset();
+    }
+
+    window.timerTestSound = function() {
+      if (!timer_audioContext) {
+        timer_audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (timer_audioContext.state === 'suspended') timer_audioContext.resume();
+      timerPlayChimeOnce();
+    }
+
+    function renderTimerWidget() {
+      const container = document.getElementById('timer-widget-container');
+      if (!container) return;
+
+      let pillClasses = 'bg-slate-800 border-slate-600 text-slate-200';
+      let pillIcon = 'timer';
+      let pillIconExtra = '';
+      if (timer_isRinging) {
+        pillClasses = 'bg-gradient-to-r from-rose-600 to-red-600 border-rose-400 text-white animate-alarm-glow';
+        pillIcon = 'bell-ring';
+        pillIconExtra = 'animate-bounce';
+      } else if (timer_isRunning) {
+        pillClasses = 'bg-gradient-to-r from-blue-600 to-indigo-600 border-blue-400 text-white shadow-[0_0_25px_rgba(59,130,246,0.5)]';
+        pillIconExtra = 'animate-pulse';
+      } else if (timer_remainingSeconds !== timer_totalSeconds) {
+        pillClasses = 'bg-gradient-to-r from-amber-500 to-orange-600 border-amber-400 text-white';
+        pillIcon = 'pause';
+      }
+
+      const pillHtml = `
+        <button onclick="timerToggleOpen()" class="fixed top-4 left-4 md:top-8 md:left-8 z-40 flex items-center gap-2 md:gap-4 px-4 py-3 md:px-7 md:py-5 rounded-full font-black shadow-2xl border-2 md:border-4 transition-all hover:scale-105 ${pillClasses}">
+          <i data-lucide="${pillIcon}" class="w-6 h-6 md:w-9 md:h-9 ${pillIconExtra}"></i>
+          <span class="text-xl md:text-3xl tabular-nums">${timerFormat(timer_remainingSeconds)}</span>
+        </button>
+      `;
+
+      let panelHtml = '';
+      if (timer_isOpen) {
+        let innerHtml = '';
+        if (timer_isRinging) {
+          innerHtml = `
+            <i data-lucide="bell-ring" class="w-20 h-20 md:w-32 md:h-32 text-rose-400 animate-bounce"></i>
+            <h2 class="text-4xl md:text-7xl font-black text-rose-400">انتهى الوقت!</h2>
+            <button onclick="timerDismiss()" class="px-10 py-6 md:px-16 md:py-8 bg-gradient-to-r from-rose-600 to-red-600 hover:scale-105 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-lg flex items-center gap-3">
+              <i data-lucide="bell-off" class="w-8 h-8 md:w-10 md:h-10"></i> إيقاف الجرس
+            </button>
+          `;
+        } else {
+          const presets = [60, 180, 300, 600, 900];
+          const presetsHtml = presets.map(sec => `
+            <button onclick="timerSetDuration(${sec})" ${timer_isRunning ? 'disabled' : ''} class="px-5 py-3 md:px-8 md:py-5 rounded-2xl text-lg md:text-2xl font-bold border-2 transition-all disabled:opacity-40 ${timer_totalSeconds === sec ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}">
+              ${Math.floor(sec / 60)} د
+            </button>
+          `).join('');
+
+          const controlBtn = timer_isRunning
+            ? `<button onclick="timerPause()" class="flex items-center gap-3 px-8 py-5 md:px-14 md:py-8 bg-gradient-to-r from-amber-500 to-orange-600 hover:scale-105 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-lg"><i data-lucide="pause" class="w-8 h-8 md:w-10 md:h-10"></i>إيقاف مؤقت</button>`
+            : `<button onclick="timerStart()" ${timer_remainingSeconds <= 0 ? 'disabled' : ''} class="flex items-center gap-3 px-8 py-5 md:px-14 md:py-8 bg-gradient-to-r from-emerald-500 to-teal-600 hover:scale-105 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-lg disabled:opacity-40"><i data-lucide="play" class="w-8 h-8 md:w-10 md:h-10"></i>ابدأ</button>`;
+
+          innerHtml = `
+            <h2 class="text-3xl md:text-5xl font-bold text-white flex items-center gap-3 md:gap-4">
+              <i data-lucide="timer" class="w-8 h-8 md:w-12 md:h-12 text-blue-400"></i> المؤقت
+            </h2>
+
+            <div class="text-7xl md:text-[9rem] font-black tabular-nums leading-none ${timer_isRunning ? 'text-blue-400' : 'text-white'}">
+              ${timerFormat(timer_remainingSeconds)}
+            </div>
+
+            <div class="flex flex-wrap gap-3 md:gap-4 justify-center">${presetsHtml}</div>
+
+            <div class="flex items-center gap-4 md:gap-6">
+              <button onclick="timerAdjust(-60)" ${timer_isRunning ? 'disabled' : ''} class="w-12 h-12 md:w-16 md:h-16 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 rounded-full text-white text-3xl font-bold flex items-center justify-center transition-colors">-</button>
+              <span class="text-slate-400 text-lg md:text-2xl">دقيقة</span>
+              <button onclick="timerAdjust(60)" ${timer_isRunning ? 'disabled' : ''} class="w-12 h-12 md:w-16 md:h-16 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 rounded-full text-white text-3xl font-bold flex items-center justify-center transition-colors">+</button>
+            </div>
+
+            <div class="flex flex-wrap gap-4 md:gap-6 justify-center mt-2 md:mt-4">
+              ${controlBtn}
+              <button onclick="timerReset()" class="flex items-center gap-3 px-6 py-5 md:px-10 md:py-8 bg-slate-700 hover:bg-slate-600 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-lg"><i data-lucide="rotate-ccw" class="w-7 h-7 md:w-9 md:h-9"></i>إعادة</button>
+            </div>
+            <button onclick="timerTestSound()" class="text-slate-400 hover:text-slate-200 text-base md:text-xl underline transition-colors">تجربة النغمة 🔊</button>
+          `;
+        }
+
+        panelHtml = `
+          <div class="fixed inset-0 bg-slate-950/95 z-50 flex items-center justify-center p-4 md:p-8 animate-fade-in backdrop-blur-sm">
+            <div class="bg-slate-800 border-2 md:border-4 ${timer_isRinging ? 'border-rose-500 animate-alarm-glow' : 'border-slate-600'} rounded-[2rem] md:rounded-[3rem] p-6 md:p-14 w-full max-w-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] relative flex flex-col items-center text-center gap-5 md:gap-8">
+              ${!timer_isRinging ? `
+                <button onclick="timerToggleOpen()" class="absolute top-4 left-4 md:top-8 md:left-8 p-2 md:p-4 bg-slate-700 hover:bg-rose-500 rounded-full text-white transition-colors">
+                  <i data-lucide="x" class="w-6 h-6 md:w-8 md:h-8"></i>
+                </button>
+              ` : ''}
+              ${innerHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = pillHtml + panelHtml;
+    }
+
+    function renderEscalationIndicator(level) {
+      if (level === 0) return `<div class="w-12 h-12 rounded-full bg-slate-700/50 border-2 border-slate-600 flex items-center justify-center text-slate-500 font-bold text-xl transition-colors">0</div>`;
+      if (level === 1) return `<div class="w-12 h-12 rounded-full bg-yellow-400 border-4 border-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.6)] flex items-center justify-center animate-pulse transition-colors"><i data-lucide="alert-circle" class="text-yellow-800 w-8 h-8"></i></div>`;
+      if (level === 2) return `<div class="w-12 h-12 rounded-full bg-orange-500 border-4 border-orange-300 shadow-[0_0_15px_rgba(249,115,22,0.8)] flex items-center justify-center transition-colors"><i data-lucide="alert-triangle" class="text-orange-100 w-8 h-8"></i></div>`;
+      if (level === 3) return `<div class="w-12 h-12 rounded-full bg-red-600 border-4 border-red-400 shadow-[0_0_20px_rgba(220,38,38,1)] flex items-center justify-center animate-bounce transition-colors"><i data-lucide="octagon" class="text-white w-8 h-8"></i></div>`;
+      if (level === 4) return `<div class="w-12 h-12 rounded-full bg-rose-900 border-4 border-rose-500 shadow-[0_0_20px_rgba(159,18,57,1)] flex items-center justify-center transition-colors"><i data-lucide="book-open" class="text-rose-200 w-7 h-7"></i></div>`;
+      return `<div class="w-12 h-12 rounded-xl bg-black border-4 border-slate-700 shadow-[0_0_20px_rgba(0,0,0,0.8)] flex items-center justify-center transition-colors"><span class="text-red-500 font-black text-xl">-0.5</span></div>`;
+    }
+
+    function initDisciplineBoard(container) {
+      if (!db_selectedClass) {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center space-y-10 md:space-y-16 animate-fade-in w-full px-4 text-center">
+            <h2 class="text-4xl md:text-6xl font-bold text-white flex items-center gap-4 justify-center">
+              <i data-lucide="shield-alert" class="w-12 h-12 text-blue-400"></i>
+              إدارة الانضباط والتحفيز
+            </h2>
+            <p class="text-xl md:text-3xl text-slate-300">اختر الفصل للوصول للوحة الانضباط الخاصة به</p>
+            <div class="flex flex-col md:flex-row flex-wrap gap-8 md:gap-12 w-full md:w-auto items-center justify-center">
+              <button onclick="dbSetClass('G9A')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-indigo-600 to-purple-700 hover:scale-105 transition-all shadow-[0_0_40px_rgba(79,70,229,0.4)] flex flex-col items-center justify-center border-4 border-indigo-400 group">
+                <span class="text-5xl md:text-7xl font-black text-white">G9A</span>
+              </button>
+              <button onclick="dbSetClass('G9B')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-emerald-600 to-teal-700 hover:scale-105 transition-all shadow-[0_0_40px_rgba(16,185,129,0.4)] flex flex-col items-center justify-center border-4 border-emerald-400 group">
+                <span class="text-5xl md:text-7xl font-black text-white">G9B</span>
+              </button>
+              <button onclick="dbSetClass('G10A')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-orange-600 to-amber-600 hover:scale-105 transition-all shadow-[0_0_40px_rgba(234,88,12,0.4)] flex flex-col items-center justify-center border-4 border-orange-400 group">
+                <span class="text-5xl md:text-7xl font-black text-white">G10A</span>
+              </button>
+            </div>
+          </div>
+        `;
+      } else {
+        const currentStudents = classData[db_selectedClass];
+        
+        let gridHtml = currentStudents.map((student) => {
+          return `
+            <div class="bg-slate-800 rounded-3xl border-2 border-slate-700 p-5 flex flex-col gap-4 shadow-lg hover:border-slate-500 transition-colors">
+              <div class="flex items-center gap-3 border-b border-slate-700/50 pb-3">
+                <span class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-lg font-bold text-slate-300 shrink-0">${student.num}</span>
+                <h3 class="text-xl md:text-2xl font-bold truncate flex-1 text-white">${student.name}</h3>
+                <button onclick="dbOpenLogModal('${student.id}')" class="p-3 rounded-2xl bg-slate-700 hover:bg-blue-600 transition-colors text-blue-300 hover:text-white shrink-0">
+                  <i data-lucide="pen-tool" class="w-6 h-6"></i>
+                </button>
+              </div>
+              
+              <div class="flex justify-between items-center px-1">
+                <div class="flex flex-col items-center bg-slate-900/50 px-4 py-2 rounded-2xl">
+                  <span class="text-sm text-slate-400 font-bold mb-1">الدرجات</span>
+                  <span class="text-4xl font-black text-emerald-400 tabular-nums">${student.participationScore}</span>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                  <button onclick="dbAdjustEscalation('${student.id}', -1)" class="w-14 h-14 rounded-2xl bg-slate-700 hover:bg-emerald-600 text-white font-black text-3xl flex items-center justify-center transition-transform active:scale-90 shadow-md">-</button>
+                  <div class="w-14 h-14 flex items-center justify-center">
+                    ${renderEscalationIndicator(student.escalationLevel)}
+                  </div>
+                  <button onclick="dbAdjustEscalation('${student.id}', 1)" class="w-14 h-14 rounded-2xl bg-slate-700 hover:bg-rose-600 text-white font-black text-3xl flex items-center justify-center transition-transform active:scale-90 shadow-md">+</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        let popupHtml = '';
+        if (db_popup) {
+          popupHtml = `
+            <div class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div class="bg-slate-800 border-4 rounded-3xl p-10 max-w-2xl w-full shadow-2xl relative flex flex-col items-center text-center
+                ${db_popup.type === 'danger' ? 'border-red-600 shadow-red-900/50' : 
+                  db_popup.type === 'research' ? 'border-rose-800 shadow-rose-900/50' : 
+                  'border-orange-500 shadow-orange-900/50'}">
+                ${db_popup.type === 'danger' ? '<i data-lucide="octagon" class="w-24 h-24 text-red-500 mb-6 animate-pulse"></i>' : ''}
+                ${db_popup.type === 'research' ? '<i data-lucide="book-open" class="w-24 h-24 text-rose-500 mb-6"></i>' : ''}
+                
+                <h2 class="text-3xl md:text-5xl font-bold text-white mb-4">${db_popup.studentName}</h2>
+                <p class="text-2xl md:text-4xl text-slate-300 leading-relaxed font-semibold">
+                  ${db_popup.message}
+                </p>
+                <button onclick="dbClosePopup()" class="mt-10 bg-slate-700 hover:bg-slate-600 text-white px-10 py-5 rounded-2xl font-bold text-2xl transition-transform active:scale-95 w-full">
+                  فهمت، إغلاق
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        let modalHtml = '';
+        if (db_activeStudent) {
+          const now = new Date();
+          const autoDateTime = `${now.toLocaleDateString('ar-EG')} - ${now.toLocaleTimeString('ar-EG')}`;
+          modalHtml = `
+            <div class="fixed inset-0 bg-slate-950/95 z-50 flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm">
+              <div class="bg-slate-800 border-2 md:border-4 border-slate-600 rounded-[2rem] p-6 md:p-10 w-full max-w-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] relative flex flex-col">
+                <button onclick="dbCloseLogModal()" class="absolute top-6 left-6 p-3 bg-slate-700 hover:bg-rose-500 rounded-full text-white transition-colors">
+                  <i data-lucide="x" class="w-8 h-8"></i>
+                </button>
+                
+                <h3 class="text-3xl md:text-5xl font-bold text-white mb-8 border-b border-slate-700 pb-4 text-center">
+                  توثيق المخالفة: <span class="text-blue-400">${db_activeStudent.name}</span>
+                </h3>
+
+                <div class="space-y-6 flex-1">
+                  <div>
+                    <label class="block text-xl text-slate-300 font-bold mb-3">وصف المخالفة</label>
+                    <textarea id="db-desc-input" placeholder="اكتب التفاصيل هنا..." class="w-full bg-slate-900 text-white text-xl p-6 rounded-2xl border-2 border-slate-600 focus:border-emerald-500 outline-none resize-none h-40"></textarea>
+                  </div>
+                  
+                  <div>
+                    <label class="block text-xl text-slate-300 font-bold mb-3">التاريخ والوقت</label>
+                    <input type="text" readonly value="${autoDateTime}" class="w-full bg-slate-900/50 text-slate-400 text-xl p-5 rounded-2xl border-2 border-slate-700 cursor-not-allowed">
+                  </div>
+
+                  <div class="flex gap-6">
+                    <div class="flex-1">
+                      <label class="block text-xl text-slate-300 font-bold mb-3">موعد الحصة</label>
+                      <select id="db-period-select" class="w-full bg-slate-900 text-white text-xl p-5 rounded-2xl border-2 border-slate-600 focus:border-blue-500 outline-none appearance-none">
+                        <option value="الأولى">الأولى</option>
+                        <option value="الثانية">الثانية</option>
+                        <option value="الثالثة">الثالثة</option>
+                        <option value="الرابعة">الرابعة</option>
+                        <option value="الخامسة">الخامسة</option>
+                        <option value="السادسة">السادسة</option>
+                        <option value="السابعة">السابعة</option>
+                      </select>
+                    </div>
+                    <div class="flex-1">
+                      <label class="block text-xl text-slate-300 font-bold mb-3">نوع الحصة</label>
+                      <div class="flex gap-4 bg-slate-900 p-2 rounded-2xl border-2 border-slate-600">
+                        <label class="flex-1 text-center cursor-pointer">
+                          <input type="radio" name="classType" value="أساسي" checked class="peer sr-only">
+                          <div class="p-3 text-xl font-bold rounded-xl peer-checked:bg-blue-600 peer-checked:text-white text-slate-400 hover:bg-slate-800 transition-colors">أساسي</div>
+                        </label>
+                        <label class="flex-1 text-center cursor-pointer">
+                          <input type="radio" name="classType" value="احتياطي" class="peer sr-only">
+                          <div class="p-3 text-xl font-bold rounded-xl peer-checked:bg-slate-700 peer-checked:text-white text-slate-400 hover:bg-slate-800 transition-colors">احتياطي</div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-10">
+                  <button onclick="dbSaveLog()" class="w-full px-8 py-5 bg-emerald-600 hover:bg-emerald-500 text-white text-3xl font-bold rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center gap-4">
+                    <i data-lucide="save" class="w-8 h-8"></i> حفظ السجل
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        let wheelHtml = '';
+        if (db_showWheel) {
+          wheelHtml = `
+            <div class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div class="bg-slate-800 border-4 border-slate-600 rounded-[3rem] p-10 max-w-3xl w-full shadow-2xl relative flex flex-col items-center">
+                <button onclick="db_isSpinning ? null : dbCloseWheel()" ${db_isSpinning ? 'disabled' : ''} class="absolute top-8 left-8 p-4 bg-slate-700 hover:bg-rose-600 rounded-full text-white transition-colors disabled:opacity-50">
+                  <i data-lucide="x" class="w-8 h-8"></i>
+                </button>
+                
+                <h2 class="text-4xl md:text-6xl font-black text-amber-400 mb-12 flex items-center gap-4 drop-shadow-md">
+                  عجلة المهام الإضافية
+                </h2>
+
+                <div class="relative w-72 h-72 md:w-96 md:h-96 mb-12">
+                  <div class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-6 z-10 text-rose-500 drop-shadow-xl scale-150">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22h20L12 2z"/></svg>
+                  </div>
+                  
+                  <div class="w-full h-full rounded-full border-[12px] border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden relative"
+                    style="
+                      background: conic-gradient(from 0deg, #f59e0b 0 60deg, #10b981 60deg 120deg, #3b82f6 120deg 180deg, #8b5cf6 180deg 240deg, #ec4899 240deg 300deg, #ef4444 300deg 360deg);
+                      transform: rotate(${db_wheelRotation}deg);
+                      transition: transform 3s cubic-bezier(0.2, 0.8, 0.2, 1);
+                    ">
+                    <div class="absolute inset-0 flex justify-center pt-6 md:pt-10 text-white font-black text-3xl md:text-5xl drop-shadow-md" style="transform: rotate(30deg);">1</div>
+                    <div class="absolute inset-0 flex justify-center pt-6 md:pt-10 text-white font-black text-3xl md:text-5xl drop-shadow-md" style="transform: rotate(90deg);">2</div>
+                    <div class="absolute inset-0 flex justify-center pt-6 md:pt-10 text-white font-black text-3xl md:text-5xl drop-shadow-md" style="transform: rotate(150deg);">3</div>
+                    <div class="absolute inset-0 flex justify-center pt-6 md:pt-10 text-white font-black text-3xl md:text-5xl drop-shadow-md" style="transform: rotate(210deg);">4</div>
+                    <div class="absolute inset-0 flex justify-center pt-6 md:pt-10 text-white font-black text-3xl md:text-5xl drop-shadow-md" style="transform: rotate(270deg);">5</div>
+                    <div class="absolute inset-0 flex justify-center pt-6 md:pt-10 text-white font-black text-3xl md:text-5xl drop-shadow-md" style="transform: rotate(330deg);">6</div>
+
+                    <div class="absolute inset-0 m-auto w-20 h-20 bg-slate-800 rounded-full border-4 border-slate-600 z-10 flex items-center justify-center shadow-lg">
+                      <div class="w-6 h-6 bg-slate-400 rounded-full"></div>
+                    </div>
+                    <!-- Lines for 6 segments (60deg each) -->
+                    <div class="absolute inset-0 border-t-4 border-slate-900/40 top-1/2 -translate-y-1/2 w-full"></div>
+                    <div class="absolute inset-0 border-t-4 border-slate-900/40 top-1/2 -translate-y-1/2 w-full rotate-[60deg]"></div>
+                    <div class="absolute inset-0 border-t-4 border-slate-900/40 top-1/2 -translate-y-1/2 w-full rotate-[120deg]"></div>
+                  </div>
+                </div>
+
+                <button onclick="dbSpinWheel()" ${db_isSpinning ? 'disabled' : ''} class="w-full px-12 py-6 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-2xl text-4xl font-black transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(245,158,11,0.5)]">
+                  ${db_isSpinning ? 'جاري الدوران...' : 'اضغط للتدوير!'}
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        container.innerHTML = `
+          <div class="flex flex-col w-full h-full max-w-7xl mx-auto py-4 md:py-8 animate-fade-in px-2 md:px-0">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-lg">
+              <div class="flex items-center gap-6 w-full md:w-auto">
+                <button onclick="dbSetClass(null)" class="bg-slate-700 hover:bg-slate-600 p-4 rounded-full text-white transition-colors">
+                  <i data-lucide="chevron-down" class="rotate-90 w-8 h-8"></i>
+                </button>
+                <h2 class="text-3xl md:text-5xl font-bold text-white flex items-center gap-4">
+                  <span class="${db_selectedClass === 'G9A' ? 'text-indigo-400' : db_selectedClass === 'G9B' ? 'text-emerald-400' : 'text-orange-400'}">${db_selectedClass}</span> - لوحة الانضباط
+                </h2>
+              </div>
+              <div class="flex gap-4 w-full md:w-auto mt-4 md:mt-0">
+                <button onclick="dbOpenWheel()" class="flex-1 md:flex-none justify-center items-center gap-3 px-6 py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl text-xl md:text-2xl font-bold transition-all shadow-lg flex">
+                  <i data-lucide="aperture" class="w-7 h-7"></i>عجلة المهام
+                </button>
+                <button onclick="dbExportCSV()" class="flex-1 md:flex-none justify-center items-center gap-3 px-6 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xl md:text-2xl font-bold transition-all shadow-lg flex">
+                  <i data-lucide="download" class="w-7 h-7"></i>تصدير السجل
+                </button>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 overflow-y-auto pr-2 pb-24 custom-scrollbar">
+              ${gridHtml}
+            </div>
+            
+            ${popupHtml}
+            ${modalHtml}
+            ${wheelHtml}
+          </div>
+        `;
+      }
+    }
+
+    // Handlers for Discipline Board
+    window.dbSetClass = function(c) { db_selectedClass = c; renderApp(); }
+    
+    window.dbAdjustEscalation = function(studentId, delta) {
+      const idx = classData[db_selectedClass].findIndex(s => s.id === studentId);
+      if (idx > -1) {
+        let student = classData[db_selectedClass][idx];
+        let newLevel = student.escalationLevel + delta;
+        if (newLevel < 0) newLevel = 0;
+        
+        // Handling Score deduction when going 5+
+        if (newLevel >= 5 && delta > 0) {
+          student.participationScore = Math.max(0, student.participationScore - 0.5);
+        } else if (student.escalationLevel >= 5 && newLevel < 5 && delta < 0) {
+          // Optional: Restore score if dropping below 5
+          student.participationScore += 0.5;
+        }
+
+        student.escalationLevel = newLevel;
+
+        if (delta > 0) { // Only show popups on increase
+          if (newLevel === 3) {
+            db_popup = { type: 'danger', message: 'تم تسجيل المخالفة.. بانتظار الإبلاغ على كلاسيرا وحرمانه من الفسحة.', studentName: student.name };
+          } else if (newLevel === 4) {
+            const randomTask = PENALTY_TASKS[Math.floor(Math.random() * PENALTY_TASKS.length)];
+            db_popup = { type: 'research', message: `مهمة إلزامية: ${randomTask}`, studentName: student.name };
+          }
+        }
+      }
+      renderApp();
+    }
+
+    window.dbClosePopup = function() { db_popup = null; renderApp(); }
+    
+    window.dbOpenLogModal = function(studentId) {
+      db_activeStudent = classData[db_selectedClass].find(s => s.id === studentId);
+      renderApp();
+    }
+    window.dbCloseLogModal = function() { db_activeStudent = null; renderApp(); }
+
+    window.dbSaveLog = function() {
+      const descInput = document.getElementById('db-desc-input').value;
+      const periodInput = document.getElementById('db-period-select').value;
+      const typeInput = document.querySelector('input[name="classType"]:checked').value;
+      
+      if (!descInput.trim()) {
+        alert('الرجاء إدخال وصف المخالفة');
+        return;
+      }
+
+      const now = new Date();
+      const newLog = {
+        id: Date.now().toString(),
+        date: now.toLocaleDateString('ar-EG'),
+        time: now.toLocaleTimeString('ar-EG'),
+        studentId: db_activeStudent.id,
+        name: db_activeStudent.name,
+        classId: db_selectedClass,
+        level: db_activeStudent.escalationLevel,
+        desc: descInput,
+        period: periodInput,
+        classType: typeInput
+      };
+
+      disciplineLogs.push(newLog);
+      localStorage.setItem('disciplineLogs', JSON.stringify(disciplineLogs));
+      
+      db_activeStudent = null;
+      renderApp();
+    }
+
+    window.dbOpenWheel = function() { db_showWheel = true; renderApp(); }
+    window.dbCloseWheel = function() { db_showWheel = false; renderApp(); }
+    
+    window.dbSpinWheel = function() {
+      if (db_isSpinning) return;
+      db_isSpinning = true;
+      
+      const spins = 5;
+      // اختيار مهمة محددة مسبقاً قبل الدوران
+      const selectedTaskIndex = Math.floor(Math.random() * PENALTY_TASKS.length);
+      
+      // حساب الزاوية المطلوبة لوقوف المؤشر على القسم الصحيح
+      // كل قسم يأخذ 60 درجة، ولجعل القسم المطلوب يتوقف في الأعلى نطرح زاوية منتصفه من 360
+      const targetAngle = 360 - (selectedTaskIndex * 60 + 30);
+      
+      // إضافة نسبة تفاوت بسيطة (+/- 20 درجة) حتى لا يقف المؤشر في المنتصف تماماً في كل مرة
+      const offset = Math.floor(Math.random() * 40) - 20;
+      
+      // حساب الدوران الإضافي وضبط الزوايا السابقة
+      const currentRotationMod = db_wheelRotation % 360;
+      const degreesToZero = currentRotationMod > 0 ? 360 - currentRotationMod : 0;
+      
+      db_wheelRotation = db_wheelRotation + degreesToZero + (spins * 360) + targetAngle + offset;
+      renderApp();
+
+      setTimeout(() => {
+        db_isSpinning = false;
+        db_showWheel = false;
+        const randomTask = PENALTY_TASKS[selectedTaskIndex];
+        db_popup = { type: 'research', message: `مهمة (${selectedTaskIndex + 1}): ${randomTask}`, studentName: 'مهمة إضافية' };
+        renderApp();
+      }, 3000); // Wait for the CSS transition to end
+    }
+
+    window.dbExportCSV = function() {
+      if (disciplineLogs.length === 0) {
+        alert("لا توجد سجلات لتصديرها.");
+        return;
+      }
+      const BOM = "\uFEFF";
+      let csvContent = BOM + "التاريخ,الوقت,اسم الطالب,الفصل,مستوى المخالفة,نوع الحصة,موعد الحصة,وصف المخالفة\n";
+      
+      disciplineLogs.forEach(log => {
+        const escapedDesc = `"${log.desc.replace(/"/g, '""')}"`;
+        csvContent += `${log.date},${log.time},${log.name},${log.classId},${log.level},${log.classType},${log.period},${escapedDesc}\n`;
+      });
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `سجل_المخالفات_${new Date().toLocaleDateString('ar-EG').replace(/\//g, '-')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    let ti_step = 'welcome';
+    let ti_round = 1;
+    let ti_revealed = false;
+    let ti_votes = { 0: 0, 1: 0, 2: 0 };
+
+    const ti_roundsData = {
+      1: [
+        { id: 1, text: "أبرمج تطبيقات ويب وأصمم ألعاباً إلكترونية تفاعلية بنفسي.", isTruth: true },
+        { id: 2, text: "تخرجت من كلية الحاسبات والمعلومات نظرّا لشغفي بالتكنولوجيا.", isTruth: false },
+        { id: 3, text: "أنا معلم لغة عربية.", isTruth: true },
+      ],
+      2: [
+        { id: 1, text: "أنا مش مصري.", isTruth: false },
+        { id: 2, text: "أنا مدرِّب AI Tools.", isTruth: true },
+        { id: 3, text: "أنا معلم قرآن كريم مدير معهد لتعليم القرآن.", isTruth: true },
+      ]
+    };
+
+    function initTeacherIntro(container) {
+      if (ti_step === 'welcome') {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center text-center space-y-6 md:space-y-10 animate-fade-in px-4">
+            <div class="relative">
+              <div class="absolute inset-0 bg-gradient-to-r from-emerald-400 to-blue-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+              <img 
+                src="https://i.postimg.cc/TY3BKsLp/Whats-App-Image-2026-08-27-at-3-14-47-PM.jpg" 
+                onerror="this.src='https://placehold.co/288x288/1e293b/475569?text=Teacher'"
+                alt="أ. حسام حلمي" 
+                class="relative w-48 h-48 md:w-72 md:h-72 object-cover object-top rounded-full border-4 md:border-8 border-slate-800 shadow-2xl z-10"
+              />
+            </div>
+            
+            <div class="space-y-4 max-w-3xl">
+              <h1 class="text-4xl md:text-6xl font-extrabold text-white drop-shadow-md leading-tight">
+                أهلاً بكم يا شباب! معكم <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">أ. حسام حلمي</span>
+              </h1>
+              <p class="text-xl md:text-3xl text-slate-300">
+                مستعدون لعام دراسي استثنائي مليء بالتحدي والابتكار؟
+              </p>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-4 mt-8 w-full sm:w-auto">
+              <button 
+                onclick="setTiStep('game')"
+                class="flex-1 sm:flex-none flex justify-center items-center gap-3 px-8 py-4 md:px-12 md:py-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full text-2xl md:text-4xl font-bold shadow-[0_0_30px_rgba(79,70,229,0.5)] transition-all hover:scale-105"
+              >
+                <i data-lucide="play" class="w-8 h-8 md:w-10 md:h-10"></i>
+                لعبة: حقيقتان وكذبة
+              </button>
+              
+              <button 
+                onclick="tiDownloadGame()"
+                class="flex-1 sm:flex-none flex justify-center items-center gap-3 px-8 py-4 md:px-12 md:py-6 bg-slate-800 hover:bg-slate-700 border-2 border-slate-600 text-white rounded-full text-2xl md:text-4xl font-bold transition-all hover:scale-105"
+              >
+                <i data-lucide="download" class="w-8 h-8 md:w-10 md:h-10 text-emerald-400"></i>
+                تحميل اللعبة
+              </button>
+            </div>
+          </div>
+        `;
+      } else {
+        const currentFacts = ti_roundsData[ti_round];
+        let cardsHtml = currentFacts.map((fact, index) => {
+          let cardClasses = !ti_revealed ? 'border-slate-600 bg-slate-800' : 
+            (fact.isTruth ? 'border-emerald-500 bg-emerald-900/30' : 'border-rose-500 bg-rose-900/30');
+            
+          let resultTag = ti_revealed ? `
+            <div class="absolute -bottom-5 px-6 py-2 md:-bottom-6 md:px-8 md:py-3 rounded-full text-xl md:text-2xl font-bold shadow-lg ${fact.isTruth ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}">
+              ${fact.isTruth ? 'حقيقة ✅' : 'كذبة ❌'}
+            </div>
+          ` : '';
+
+          return `
+            <div class="relative p-6 md:p-8 rounded-3xl border-4 transition-all duration-500 flex flex-col items-center justify-between min-h-[280px] md:min-h-[350px] text-center ${cardClasses}">
+              <p class="text-xl md:text-3xl text-white font-semibold leading-relaxed mb-6">${fact.text}</p>
+              
+              <div class="flex flex-col items-center gap-2 mt-auto w-full">
+                <span class="text-slate-400 text-sm md:text-lg">عدد المصوتين (الكذبة)</span>
+                <div class="flex items-center gap-4 bg-slate-900/50 p-2 md:p-3 rounded-2xl w-full justify-center">
+                  <button onclick="tiHandleVote(${index}, -1)" ${ti_revealed ? 'disabled' : ''} class="w-10 h-10 md:w-12 md:h-12 bg-slate-700 hover:bg-slate-600 rounded-full text-white text-2xl font-bold flex items-center justify-center disabled:opacity-30 transition-colors">-</button>
+                  <div class="text-3xl md:text-5xl font-black text-blue-400 w-16 text-center">${ti_votes[index]}</div>
+                  <button onclick="tiHandleVote(${index}, 1)" ${ti_revealed ? 'disabled' : ''} class="w-10 h-10 md:w-12 md:h-12 bg-blue-600 hover:bg-blue-500 rounded-full text-white text-2xl font-bold flex items-center justify-center disabled:opacity-30 transition-colors">+</button>
+                </div>
+              </div>
+              ${resultTag}
+            </div>
+          `;
+        }).join('');
+
+        let actionBtnHtml = '';
+        if (!ti_revealed) {
+          actionBtnHtml = `<button onclick="tiReveal()" class="px-8 py-4 md:px-12 md:py-6 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:scale-105">كشف الحقيقة!</button>`;
+        } else if (ti_round === 1) {
+          actionBtnHtml = `<button onclick="tiNextRound()" class="px-8 py-4 md:px-12 md:py-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-lg hover:scale-105 flex items-center gap-3">الجولة الثانية <i data-lucide="play" class="w-6 h-6 md:w-8 md:h-8"></i></button>`;
+        } else {
+          actionBtnHtml = `<button onclick="tiReset()" class="px-8 py-4 md:px-12 md:py-6 bg-slate-700 hover:bg-slate-600 rounded-full text-2xl md:text-4xl font-bold text-white transition-all shadow-lg hover:scale-105 flex items-center gap-3"><i data-lucide="check" class="w-6 h-6 md:w-8 md:h-8 text-emerald-400"></i>إنهاء اللعبة والعودة</button>`;
+        }
+
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center space-y-6 md:space-y-10 w-full max-w-6xl animate-fade-in px-4">
+            <h2 class="text-3xl md:text-5xl font-bold text-white mb-2 md:mb-4 flex items-center gap-4 text-center">
+              <i data-lucide="user" class="text-blue-400 w-10 h-10 md:w-12 md:h-12 hidden md:block"></i>
+              دعونا نتعرف عليّ أولاً: حقيقتان وكذبة! (الجزء ${ti_round === 1 ? 'الأول' : 'الثاني'})
+            </h2>
+            <p class="text-lg md:text-2xl text-slate-300 mb-4 text-center">
+              من يعتقد أن هذه المعلومة هي <span class="text-rose-400 font-bold">الكذبة</span>؟ قم برفع يدك وسنقوم بتسجيل عدد الأصوات!
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 w-full">${cardsHtml}</div>
+            <div class="flex gap-4 mt-8 md:mt-12 z-10">${actionBtnHtml}</div>
+          </div>
+        `;
+      }
+    }
+
+    window.setTiStep = function(s) { ti_step = s; renderApp(); }
+    window.tiHandleVote = function(idx, delta) { 
+      if(ti_revealed) return;
+      ti_votes[idx] = Math.max(0, ti_votes[idx] + delta);
+      renderApp();
+    }
+    window.tiReveal = function() { ti_revealed = true; renderApp(); }
+    window.tiNextRound = function() { ti_round = 2; ti_revealed = false; ti_votes = {0:0,1:0,2:0}; renderApp(); }
+    window.tiReset = function() { ti_step = 'welcome'; ti_round = 1; ti_revealed = false; ti_votes = {0:0,1:0,2:0}; renderApp(); }
+    
+    window.tiDownloadGame = function() {
+        const htmlContent = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لعبة حقيقتان وكذبة - أ. حسام حلمي</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>body { font-family: Tahoma, Arial, sans-serif; background-color: #0f172a; color: white; }</style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 py-12">
+  <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center space-y-8"></div>
+  <script>
+    const roundsData = {
+      1: [
+        { id: 1, text: "أبرمج تطبيقات ويب وأصمم ألعاباً إلكترونية تفاعلية بنفسي.", isTruth: true },
+        { id: 2, text: "تخرجت من كلية الحاسبات والمعلومات نظرّا لشغفي بالتكنولوجيا.", isTruth: false },
+        { id: 3, text: "أنا معلم لغة عربية.", isTruth: true },
+      ],
+      2: [
+        { id: 1, text: "أنا مش مصري.", isTruth: false },
+        { id: 2, text: "أنا مدرِّب AI Tools.", isTruth: true },
+        { id: 3, text: "أنا معلم قرآن كريم مدير معهد لتعليم القرآن.", isTruth: true },
+      ]
+    };
+    let currentRound = 1; let revealed = false; let votes = { 0: 0, 1: 0, 2: 0 };
+    function render() {
+      const app = document.getElementById('app');
+      const currentFacts = roundsData[currentRound];
+      let cardsHtml = currentFacts.map((fact, index) => {
+        const cardBg = revealed ? (fact.isTruth ? 'bg-emerald-900/30 border-emerald-500' : 'bg-rose-900/30 border-rose-500') : 'bg-slate-800 border-slate-600';
+        const resultHtml = revealed ? '<div class="absolute -bottom-6 px-8 py-3 rounded-full text-2xl font-bold shadow-lg ' + (fact.isTruth ? 'bg-emerald-500' : 'bg-rose-500') + ' text-white">' + (fact.isTruth ? 'حقيقة ✅' : 'كذبة ❌') + '</div>' : '';
+        return '<div class="relative p-8 rounded-3xl border-4 flex flex-col items-center justify-between min-h-[350px] text-center ' + cardBg + ' transition-all">' +
+            '<p class="text-3xl text-white font-semibold leading-relaxed mb-6">' + fact.text + '</p>' +
+            '<div class="flex flex-col items-center gap-2 mt-auto w-full z-10">' +
+              '<span class="text-slate-400 text-lg">عدد المصوتين (الكذبة)</span>' +
+              '<div class="flex items-center gap-4 bg-slate-900/50 p-3 rounded-2xl w-full justify-center">' +
+                '<button onclick="handleVote(' + index + ', -1)" ' + (revealed ? 'disabled' : '') + ' class="w-12 h-12 bg-slate-700 hover:bg-slate-600 rounded-full text-white text-2xl font-bold flex items-center justify-center disabled:opacity-30">-</button>' +
+                '<div class="text-5xl font-black text-blue-400 w-16 text-center">' + votes[index] + '</div>' +
+                '<button onclick="handleVote(' + index + ', 1)" ' + (revealed ? 'disabled' : '') + ' class="w-12 h-12 bg-blue-600 hover:bg-blue-500 rounded-full text-white text-2xl font-bold flex items-center justify-center disabled:opacity-30">+</button>' +
+              '</div></div>' + resultHtml + '</div>';
+      }).join('');
+      let actionButtonHtml = '';
+      if (!revealed) actionButtonHtml = '<button onclick="reveal()" class="px-12 py-6 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 rounded-full text-4xl font-bold text-white transition-all shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:scale-105">كشف الحقيقة!</button>';
+      else if (currentRound === 1) actionButtonHtml = '<button onclick="nextRound()" class="px-12 py-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-full text-4xl font-bold text-white transition-all shadow-lg hover:scale-105 flex items-center gap-3">الجولة الثانية ▶</button>';
+      else actionButtonHtml = '<button onclick="reset()" class="px-12 py-6 bg-slate-700 hover:bg-slate-600 rounded-full text-4xl font-bold text-white transition-all shadow-lg hover:scale-105 flex items-center gap-3">↺ إعادة اللعبة</button>';
+      app.innerHTML = '<h2 class="text-4xl md:text-5xl font-bold text-white mb-4 text-center">دعونا نتعرف عليّ أولاً: حقيقتان وكذبة! (الجزء ' + (currentRound === 1 ? 'الأول' : 'الثاني') + ')</h2>' +
+        '<p class="text-xl md:text-2xl text-slate-300 mb-8 text-center">من يعتقد أن هذه المعلومة هي <span class="text-rose-400 font-bold">الكذبة</span>؟ قم برفع يدك وسنقوم بتسجيل عدد الأصوات!</p>' +
+        '<div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">' + cardsHtml + '</div>' +
+        '<div class="flex gap-4 mt-12 z-20">' + actionButtonHtml + '</div>';
+    }
+    window.handleVote = function(index, delta) { if (revealed) return; votes[index] = Math.max(0, votes[index] + delta); render(); }
+    window.reveal = function() { revealed = true; render(); }
+    window.nextRound = function() { currentRound = 2; revealed = false; votes = { 0: 0, 1: 0, 2: 0 }; render(); }
+    window.reset = function() { currentRound = 1; revealed = false; votes = { 0: 0, 1: 0, 2: 0 }; render(); }
+    render();
+  <\/script>
+</body>
+</html>`;
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Truth_or_Lie_Full_Game.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    let sr_selectedClass = null;
+    let sr_activeStudent = null;
+    let sr_selectedQuestion = '';
+    let sr_answerText = '';
+
+    function initStudentRoster(container) {
+      if (!sr_selectedClass) {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center space-y-10 md:space-y-16 animate-fade-in w-full px-4 text-center">
+            <h2 class="text-4xl md:text-6xl font-bold text-white">التعرف على الطلبة</h2>
+            <p class="text-xl md:text-3xl text-slate-300">اختر الفصل للبدء في تسجيل الحضور وكسر الجليد</p>
+            <div class="flex flex-col md:flex-row flex-wrap gap-8 md:gap-12 w-full md:w-auto items-center justify-center">
+              <button onclick="srSetClass('G9A')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-indigo-600 to-purple-700 hover:scale-105 transition-all shadow-[0_0_40px_rgba(79,70,229,0.4)] flex flex-col items-center justify-center border-4 border-indigo-400 group">
+                <i data-lucide="users" class="text-white mb-4 md:mb-6 w-16 h-16 md:w-20 md:h-20 group-hover:scale-110 transition-transform"></i>
+                <span class="text-5xl md:text-7xl font-black text-white">G9A</span>
+                <span class="text-lg md:text-xl text-indigo-200 mt-2 md:mt-4">${classData.G9A.length} طالب</span>
+              </button>
+              <button onclick="srSetClass('G9B')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-emerald-600 to-teal-700 hover:scale-105 transition-all shadow-[0_0_40px_rgba(16,185,129,0.4)] flex flex-col items-center justify-center border-4 border-emerald-400 group">
+                <i data-lucide="users" class="text-white mb-4 md:mb-6 w-16 h-16 md:w-20 md:h-20 group-hover:scale-110 transition-transform"></i>
+                <span class="text-5xl md:text-7xl font-black text-white">G9B</span>
+                <span class="text-lg md:text-xl text-emerald-200 mt-2 md:mt-4">${classData.G9B.length} طالب</span>
+              </button>
+              <button onclick="srSetClass('G10A')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-orange-600 to-amber-600 hover:scale-105 transition-all shadow-[0_0_40px_rgba(234,88,12,0.4)] flex flex-col items-center justify-center border-4 border-orange-400 group">
+                <i data-lucide="users" class="text-white mb-4 md:mb-6 w-16 h-16 md:w-20 md:h-20 group-hover:scale-110 transition-transform"></i>
+                <span class="text-5xl md:text-7xl font-black text-white">G10A</span>
+                <span class="text-lg md:text-xl text-orange-200 mt-2 md:mt-4">${classData.G10A.length} طالب</span>
+              </button>
+            </div>
+          </div>
+        `;
+      } else {
+        const currentStudents = classData[sr_selectedClass];
+        
+        let gridHtml = currentStudents.length === 0 ? `
+          <div class="col-span-full flex flex-col items-center justify-center py-16 md:py-24 text-center gap-4 md:gap-6">
+            <i data-lucide="user-x" class="w-16 h-16 md:w-24 md:h-24 text-slate-600"></i>
+            <p class="text-xl md:text-3xl text-slate-500 font-bold">لم تتم إضافة أسماء طلاب ${sr_selectedClass} بعد</p>
+          </div>
+        ` : currentStudents.map((student, i) => {
+          if (student.status === 'absent') return '';
+          const isAnswered = student.status === 'present' && student.answer;
+          let btnClass = isAnswered ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-blue-400';
+          let checkIcon = isAnswered ? `<i data-lucide="check-circle" class="w-5 h-5 md:w-6 md:h-6 absolute top-1 right-1 md:top-2 md:right-2 text-emerald-400"></i>` : '';
+          
+          return `
+            <button onclick='srOpenStudent(${JSON.stringify(student)})' class="relative aspect-square rounded-2xl flex flex-col items-center justify-center text-2xl md:text-4xl font-black border-2 md:border-4 transition-all duration-300 transform hover:scale-105 hover:z-10 shadow-lg ${btnClass}">
+              ${student.num}
+              ${checkIcon}
+            </button>
+          `;
+        }).join('');
+
+        let modalHtml = '';
+        if (sr_activeStudent) {
+          let innerModalHtml = '';
+          if (sr_activeStudent.status === null) {
+            innerModalHtml = `
+              <div class="flex flex-col sm:flex-row gap-4 md:gap-8 justify-center mt-4 md:mt-8">
+                <button onclick="srUpdateStatus('present')" class="flex-1 flex flex-col items-center gap-4 md:gap-6 py-8 md:py-12 bg-emerald-600/20 hover:bg-emerald-600/40 border-2 md:border-4 border-emerald-500 rounded-3xl text-emerald-400 hover:text-emerald-300 transition-all text-3xl md:text-5xl font-bold">
+                  <i data-lucide="check" class="w-12 h-12 md:w-20 md:h-20"></i>حاضر ومستعد
+                </button>
+                <button onclick="srUpdateStatus('absent')" class="flex-1 flex flex-col items-center gap-4 md:gap-6 py-8 md:py-12 bg-rose-600/20 hover:bg-rose-600/40 border-2 md:border-4 border-rose-500 rounded-3xl text-rose-400 hover:text-rose-300 transition-all text-3xl md:text-5xl font-bold">
+                  <i data-lucide="x" class="w-12 h-12 md:w-20 md:h-20"></i>غائب اليوم
+                </button>
+              </div>
+            `;
+          } else if (sr_activeStudent.status === 'present') {
+            if (!sr_selectedQuestion) {
+              let qButtons = iceBreakerQuestions.map(q => 
+                `<button onclick="srSetQuestion('${q.replace(/'/g, "\\'")}')" class="text-right p-4 md:p-6 bg-slate-700/50 hover:bg-blue-600/30 border-2 border-slate-600 hover:border-blue-400 rounded-2xl text-lg md:text-2xl text-slate-200 transition-all">${q}</button>`
+              ).join('');
+              innerModalHtml = `
+                <div class="space-y-6 md:space-y-10 animate-fade-in-up flex-1">
+                  <h4 class="text-2xl md:text-4xl font-bold text-center text-slate-200 mb-6 md:mb-8">اختر سؤالاً لكسر الجليد!</h4>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">${qButtons}</div>
+                </div>
+              `;
+            } else {
+              innerModalHtml = `
+                <div class="space-y-6 md:space-y-10 animate-fade-in-up flex-1 flex flex-col">
+                  <div class="flex flex-col space-y-4 md:space-y-8 h-full">
+                    <div class="bg-blue-900/40 border-l-4 md:border-l-8 border-blue-500 p-4 md:p-8 rounded-2xl">
+                      <p class="text-xl md:text-4xl text-blue-100 font-semibold leading-relaxed">${sr_selectedQuestion}</p>
+                    </div>
+                    <textarea id="sr-answer-input" oninput="srUpdateAnswerText(this.value)" autofocus placeholder="اكتب إجابة الطالب هنا..." class="w-full flex-1 min-h-[150px] md:min-h-[200px] bg-slate-900 text-white text-xl md:text-3xl p-4 md:p-8 rounded-3xl border-2 md:border-4 border-slate-600 focus:border-emerald-500 outline-none resize-none placeholder:text-slate-600">${sr_answerText}</textarea>
+                    <div class="flex flex-col sm:flex-row gap-4 md:gap-6 mt-auto pt-4">
+                      <button onclick="srSetQuestion('')" class="w-full sm:w-auto px-6 py-4 md:px-10 md:py-6 bg-slate-700 hover:bg-slate-600 text-white text-xl md:text-3xl font-bold rounded-2xl transition-colors">تغيير السؤال</button>
+                      <button id="sr-save-btn" onclick="srSaveAnswer()" class="w-full sm:flex-1 px-6 py-4 md:px-10 md:py-6 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl md:text-3xl font-bold rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.4)]" ${!sr_answerText.trim() ? 'disabled' : ''}>حفظ الإجابة</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+          }
+
+          modalHtml = `
+            <div class="fixed inset-0 bg-slate-950/95 z-50 flex items-center justify-center p-4 md:p-8 animate-fade-in backdrop-blur-sm">
+              <div class="bg-slate-800 border-2 md:border-4 border-slate-600 rounded-[2rem] md:rounded-[3rem] p-6 md:p-12 w-full max-w-5xl shadow-[0_0_50px_rgba(0,0,0,0.8)] relative flex flex-col max-h-[95vh] overflow-y-auto custom-scrollbar">
+                <button onclick="srCloseModal()" class="absolute top-4 left-4 md:top-8 md:left-8 p-2 md:p-4 bg-slate-700 hover:bg-rose-500 rounded-full text-white transition-colors">
+                  <i data-lucide="x" class="w-6 h-6 md:w-8 md:h-8"></i>
+                </button>
+                <div class="text-center mb-8 md:mb-12 mt-4 md:mt-0">
+                  <div class="inline-block bg-slate-900 px-6 py-2 md:px-8 md:py-4 rounded-full text-xl md:text-3xl font-bold text-slate-400 mb-4 md:mb-6 border border-slate-700">
+                    رقم البطاقة: ${sr_activeStudent.num}
+                  </div>
+                  <h3 class="text-3xl md:text-6xl font-extrabold text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 leading-normal md:leading-normal">
+                    ${sr_activeStudent.name}
+                  </h3>
+                </div>
+                ${innerModalHtml}
+              </div>
+            </div>
+          `;
+        }
+
+        container.innerHTML = `
+          <div class="flex flex-col w-full h-full max-w-7xl mx-auto py-4 md:py-8 animate-fade-in px-2 md:px-0">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 md:mb-10 bg-slate-800 p-4 md:p-6 rounded-3xl border border-slate-700 shadow-lg">
+              <div class="flex items-center gap-4 md:gap-6 w-full md:w-auto justify-between md:justify-start">
+                <button onclick="srSetClass(null)" class="bg-slate-700 hover:bg-slate-600 p-3 md:p-4 rounded-full text-white transition-colors">
+                  <i data-lucide="chevron-down" class="rotate-90 w-6 h-6 md:w-8 md:h-8"></i>
+                </button>
+                <h2 class="text-2xl md:text-5xl font-bold text-white flex items-center gap-2 md:gap-4">
+                  <span class="${sr_selectedClass === 'G9A' ? 'text-indigo-400' : sr_selectedClass === 'G9B' ? 'text-emerald-400' : 'text-orange-400'}">${sr_selectedClass}</span> - بطاقات الطلاب
+                </h2>
+              </div>
+              <button onclick="srPrintPDF()" class="w-full md:w-auto flex justify-center items-center gap-3 px-6 py-3 md:px-8 md:py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-lg md:text-2xl font-bold transition-all shadow-lg">
+                <i data-lucide="printer" class="w-6 h-6 md:w-7 md:h-7"></i>تصدير PDF
+              </button>
+            </div>
+            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 md:gap-4 overflow-y-auto pr-2 pb-24 custom-scrollbar">
+              ${gridHtml}
+            </div>
+            ${modalHtml}
+          </div>
+        `;
+      }
+    }
+
+    window.srSetClass = function(c) { sr_selectedClass = c; renderApp(); }
+    window.srOpenStudent = function(s) { 
+      sr_activeStudent = classData[sr_selectedClass].find(x => x.id === s.id);
+      sr_selectedQuestion = sr_activeStudent.question || '';
+      sr_answerText = sr_activeStudent.answer || '';
+      renderApp(); 
+    }
+    window.srCloseModal = function() { sr_activeStudent = null; renderApp(); }
+    window.srUpdateStatus = function(status) {
+      const idx = classData[sr_selectedClass].findIndex(s => s.id === sr_activeStudent.id);
+      if(idx > -1) {
+        classData[sr_selectedClass][idx].status = status;
+      }
+      if (status === 'absent') sr_activeStudent = null;
+      renderApp();
+    }
+    window.srSetQuestion = function(q) { sr_selectedQuestion = q; renderApp(); }
+    window.srUpdateAnswerText = function(val) { 
+      sr_answerText = val; 
+      const btn = document.getElementById('sr-save-btn');
+      if(btn) btn.disabled = !sr_answerText.trim();
+    }
+    window.srSaveAnswer = function() {
+      if (!sr_answerText.trim() || !sr_selectedQuestion) return;
+      const idx = classData[sr_selectedClass].findIndex(s => s.id === sr_activeStudent.id);
+      if(idx > -1) {
+        classData[sr_selectedClass][idx].status = 'present';
+        classData[sr_selectedClass][idx].question = sr_selectedQuestion;
+        classData[sr_selectedClass][idx].answer = sr_answerText;
+      }
+      sr_activeStudent = null;
+      renderApp();
+    }
+
+    window.srPrintPDF = function() {
+      const allStudents = [...classData.G9A, ...classData.G9B, ...classData.G10A].filter(s => s.status === 'present' && s.answer);
+      let htmlContent = `
+        <html dir="rtl">
+        <head>
+          <title>إجابات تعارف الطلاب - أ. حسام حلمي</title>
+          <style>
+            body { font-family: Tahoma, Arial, sans-serif; padding: 40px; color: #111; background: #fff; }
+            h1 { text-align: center; color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 30px; }
+            .card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin-bottom: 20px; page-break-inside: avoid; }
+            .name { font-size: 20px; font-weight: bold; color: #0f172a; margin-bottom: 10px; }
+            .question { font-size: 16px; color: #475569; margin-bottom: 8px; font-style: italic; }
+            .answer { font-size: 18px; color: #047857; font-weight: 500; }
+            .class-badge { float: left; background: #e2e8f0; padding: 4px 10px; border-radius: 4px; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <h1>ملف تعارف الطلاب - العام الدراسي 2026/2027</h1>
+          ${allStudents.length === 0 ? '<p style="text-align:center; font-size:18px;">لم يتم تسجيل إجابات بعد.</p>' : ''}
+          ${allStudents.map(s => `
+            <div class="card">
+              <div class="class-badge">${s.cls}</div>
+              <div class="name">${s.num}. ${s.name}</div>
+              <div class="question">السؤال: ${s.question}</div>
+              <div class="answer">الإجابة: ${s.answer}</div>
+            </div>
+          `).join('')}
+        </body>
+        </html>
+      `;
+
+      const printWindow = window.open('', '', 'width=900,height=700');
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+    }
+
+    let cq_openCard = null;
+
+    function initCoreQuestions(container) {
+      const isCard1Open = cq_openCard === 1;
+      const isCard2Open = cq_openCard === 2;
+
+      container.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full w-full max-w-6xl mx-auto space-y-8 md:space-y-16 px-4">
+          <h2 class="text-4xl md:text-7xl font-bold text-center text-white mb-4 md:mb-8 drop-shadow-md">
+            أسئلة جوهرية قبل البداية
+          </h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-12 w-full">
+            
+            <div onclick="cqToggleCard(1)" class="relative overflow-hidden rounded-[2rem] md:rounded-[3rem] transition-all duration-500 cursor-pointer border-2 md:border-4 ${isCard1Open ? 'border-emerald-500 shadow-[0_0_50px_rgba(16,185,129,0.3)] bg-slate-800' : 'border-slate-700 bg-slate-800/50 hover:border-emerald-400'}">
+              <div class="p-6 md:p-12 flex flex-col items-center text-center space-y-4 md:space-y-6">
+                <div class="p-4 md:p-6 rounded-full bg-emerald-500/20 text-emerald-400 transition-transform duration-500 ${isCard1Open ? 'scale-125' : ''}">
+                  <i data-lucide="message-circle" class="w-12 h-12 md:w-20 md:h-20"></i>
+                </div>
+                <h3 class="text-3xl md:text-5xl font-bold text-white">ليه أتعلم لغة عربية؟</h3>
+                <div class="transition-all duration-500 ease-in-out w-full ${isCard1Open ? 'max-h-[600px] opacity-100 mt-4 md:mt-8' : 'max-h-0 opacity-0 overflow-hidden'}">
+                  <ul class="text-right space-y-4 md:space-y-6 text-xl md:text-3xl text-slate-300">
+                    <li class="flex items-start md:items-center gap-4 bg-slate-700/50 p-4 md:p-6 rounded-2xl">
+                      <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-emerald-400 shrink-0 mt-2 md:mt-0"></div>
+                      <span><strong class="text-emerald-400">هويتك وسط العالم:</strong> لغتك هي جذورك وبصمتك.</span>
+                    </li>
+                    <li class="flex items-start md:items-center gap-4 bg-slate-700/50 p-4 md:p-6 rounded-2xl">
+                      <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-emerald-400 shrink-0 mt-2 md:mt-0"></div>
+                      <span><strong class="text-emerald-400">الميزة التنافسية:</strong> إتقان لغتك الأم يعزز التعلم.</span>
+                    </li>
+                    <li class="flex items-start md:items-center gap-4 bg-slate-700/50 p-4 md:p-6 rounded-2xl">
+                      <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-emerald-400 shrink-0 mt-2 md:mt-0"></div>
+                      <span><strong class="text-emerald-400">قوة التعبير:</strong> تمنحك قوة التأثير والإقناع.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div onclick="cqToggleCard(2)" class="relative overflow-hidden rounded-[2rem] md:rounded-[3rem] transition-all duration-500 cursor-pointer border-2 md:border-4 ${isCard2Open ? 'border-blue-500 shadow-[0_0_50px_rgba(59,130,246,0.3)] bg-slate-800' : 'border-slate-700 bg-slate-800/50 hover:border-blue-400'}">
+              <div class="p-6 md:p-12 flex flex-col items-center text-center space-y-4 md:space-y-6">
+                <div class="p-4 md:p-6 rounded-full bg-blue-500/20 text-blue-400 transition-transform duration-500 ${isCard2Open ? 'scale-125' : ''}">
+                  <i data-lucide="help-circle" class="w-12 h-12 md:w-20 md:h-20"></i>
+                </div>
+                <h3 class="text-3xl md:text-5xl font-bold text-white">وليه أسمعلك؟</h3>
+                <div class="transition-all duration-500 ease-in-out w-full ${isCard2Open ? 'max-h-[600px] opacity-100 mt-4 md:mt-8' : 'max-h-0 opacity-0 overflow-hidden'}">
+                  <ul class="text-right space-y-4 md:space-y-6 text-xl md:text-3xl text-slate-300">
+                    <li class="flex items-start md:items-center gap-4 bg-slate-700/50 p-4 md:p-6 rounded-2xl">
+                      <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-blue-400 shrink-0 mt-2 md:mt-0"></div>
+                      <span>لأنني <strong class="text-blue-400">لن أجعلك تحفظ</strong> بل ستفهم وتطبق.</span>
+                    </li>
+                    <li class="flex items-start md:items-center gap-4 bg-slate-700/50 p-4 md:p-6 rounded-2xl">
+                      <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-blue-400 shrink-0 mt-2 md:mt-0"></div>
+                      <span>لأنني <strong class="text-blue-400">أحترم عقلك ووقتك</strong> لاستثمار كل دقيقة.</span>
+                    </li>
+                    <li class="flex items-start md:items-center gap-4 bg-slate-700/50 p-4 md:p-6 rounded-2xl">
+                      <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-blue-400 shrink-0 mt-2 md:mt-0"></div>
+                      <span>لأننا <strong class="text-blue-400">فريق واحد</strong>، نجاحك هو هدفي.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      `;
+    }
+
+    window.cqToggleCard = function(id) {
+      cq_openCard = cq_openCard === id ? null : id;
+      renderApp();
+    }
+
+    let cc_openIndex = 0;
+    const cc_rules = [
+      { icon: "brain-circuit", color: "text-amber-400", title: "الحضور الذهني الكامل", desc: "وقتنا هنا للتواصل الحقيقي. غياب الهواتف فرصة لنكون حاضرين 100% في تجربة التعلم ونقاشاتنا الحية." },
+      { icon: "shield-check", color: "text-pink-400", title: "الاحترام والبيئة الآمنة", desc: "الاختلاف مطلوب لإثراء الفكر، لكن التنمر والأذى خط أحمر. نحن هنا لندعم بعضنا ونبني بيئة آمنة للجميع." },
+      { icon: "shirt", color: "text-indigo-400", title: "هويتنا الموحدة", desc: "الزي المدرسي ليس مجرد ملابس، بل هو رمز لانتمائنا كفريق واحد، نلتزم به دون تشتيت للتركيز على الجوهر." },
+      { icon: "sparkles", color: "text-cyan-400", title: "مساحتنا الإبداعية", desc: "هذا الفصل وسبورته الذكية هما معملنا لأفكارنا. الحفاظ عليهما مسؤولية مشتركة، وأي ضرر نتحمل مسؤوليته بشجاعة." },
+      { icon: "clock", color: "text-rose-400", title: "قيمة الوقت", desc: "الغياب يُسجل إلكترونياً ويومياً. كل دقيقة تفوتك هي جزء مفقود من التجربة، لنستثمر وقتنا معاً بحكمة." }
+    ];
+
+    function initClassCharter(container) {
+      let rulesHtml = cc_rules.map((rule, index) => {
+        const isOpen = cc_openIndex === index;
+        return `
+          <div onclick="ccToggleRule(${index})" class="bg-slate-800 rounded-2xl md:rounded-3xl border-2 md:border-4 transition-all duration-300 overflow-hidden cursor-pointer ${isOpen ? 'border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.2)]' : 'border-slate-700 hover:border-slate-500'}">
+            <div class="p-4 md:p-8 flex items-center justify-between bg-slate-800/80">
+              <div class="flex items-center gap-4 md:gap-8">
+                <div class="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl shadow-inner shrink-0">
+                  <div class="scale-75 md:scale-100 origin-center">
+                    <i data-lucide="${rule.icon}" class="${rule.color} w-10 h-10 md:w-14 md:h-14"></i>
+                  </div>
+                </div>
+                <h3 class="text-xl md:text-4xl font-bold ${isOpen ? 'text-white' : 'text-slate-300'}">${rule.title}</h3>
+              </div>
+              <i data-lucide="chevron-down" class="w-8 h-8 md:w-14 md:h-14 text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180 text-amber-400' : ''}"></i>
+            </div>
+            <div class="transition-all duration-500 ease-in-out bg-slate-900/50 ${isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}">
+              <p class="p-6 md:p-10 text-lg md:text-3xl text-slate-300 leading-relaxed border-t border-slate-700/50">${rule.desc}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = `
+        <div class="flex flex-col items-center h-full w-full max-w-6xl mx-auto py-4 md:py-8 px-2 md:px-0">
+          <div class="flex items-center gap-4 md:gap-6 mb-8 md:mb-12">
+            <i data-lucide="scroll-text" class="w-12 h-12 md:w-20 md:h-20 text-amber-400"></i>
+            <h2 class="text-4xl md:text-6xl font-bold text-white text-center">العقد الاجتماعي للفصل</h2>
+          </div>
+          <div class="w-full space-y-4 md:space-y-6 overflow-y-auto pb-32 custom-scrollbar pr-2">
+            ${rulesHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    window.ccToggleRule = function(idx) {
+      cc_openIndex = cc_openIndex === idx ? null : idx;
+      renderApp();
+    }
+
+    function initPledge(container) {
+      if (!isPledged) {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center h-full w-full max-w-5xl mx-auto text-center space-y-8 md:space-y-12 px-4">
+            <div class="space-y-8 md:space-y-16 animate-fade-in w-full">
+              <div class="bg-slate-800 p-8 md:p-16 rounded-[2rem] md:rounded-[4rem] border-2 md:border-4 border-slate-700 shadow-2xl">
+                <h2 class="text-3xl md:text-6xl font-bold text-white mb-6 md:mb-10 leading-tight">
+                  الآن وقد عرفنا طريقنا...<br/>
+                  <span class="text-emerald-400 mt-2 md:mt-4 block">هل أنتم مستعدون للرحلة؟</span>
+                </h2>
+                <p class="text-xl md:text-4xl text-slate-400 mb-8 md:mb-16 leading-relaxed">
+                  توقيعك هنا يعني التزامك بأن تكون جزءاً فاعلاً وإيجابياً في فريقنا طوال العام.
+                </p>
+                <button onclick="submitPledge()" class="group relative inline-flex items-center justify-center px-8 py-6 md:px-20 md:py-10 font-black text-2xl md:text-5xl text-white transition-all duration-300 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-[2rem] md:rounded-[3rem] hover:from-emerald-400 hover:to-teal-500 hover:scale-105 hover:shadow-[0_0_60px_rgba(16,185,129,0.8)] focus:outline-none w-full">
+                  <span class="flex items-center gap-4 md:gap-8">
+                    <i data-lucide="check-circle" class="w-8 h-8 md:w-16 md:h-16 group-hover:scale-110 transition-transform"></i>
+                    أوافق وألتزم بميثاق الفصل
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center h-full w-full max-w-5xl mx-auto text-center space-y-8 md:space-y-12 px-4">
+            <div class="space-y-8 md:space-y-12 animate-fade-in scale-in-center">
+              <div class="inline-block p-6 md:p-10 bg-emerald-500/20 rounded-full mb-4 md:mb-6">
+                <i data-lucide="check-circle" class="w-24 h-24 md:w-40 md:h-40 text-emerald-400"></i>
+              </div>
+              <h2 class="text-4xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 drop-shadow-lg leading-tight">
+                تم تسجيل التزامكم!
+              </h2>
+              <div class="bg-slate-800 p-6 md:p-12 rounded-[2rem] md:rounded-[3rem] border-2 md:border-4 border-slate-700 shadow-2xl inline-block mt-4 md:mt-8">
+                <p class="text-2xl md:text-5xl text-white font-bold flex flex-col md:flex-row items-center gap-4 md:gap-8 justify-center leading-relaxed">
+                  <i data-lucide="brain-circuit" class="text-purple-400 w-16 h-16 md:w-20 md:h-20"></i>
+                  استعدوا لتحدي الذكاء الاصطناعي في الحصة القادمة...
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    window.submitPledge = function() {
+      isPledged = true;
+      renderApp();
+      showConfetti();
+    }
+
+    let lb_selectedClass = null;
+
+    function lbGetScore(student) {
+      // حساب إجمالي نقاط النجم: درجة المشاركة الأساسية (مضروبة في 2) + 15 نقطة للأدوات + 15 نقطة للتقييم
+      let score = (student.participationScore * 2);
+      if (student.toolsReady) score += 15;
+      if (student.assessmentDone) score += 15;
+      return score;
+    }
+
+    function initLeaderboard(container) {
+      if (!lb_selectedClass) {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center space-y-10 md:space-y-16 animate-fade-in w-full px-4 text-center">
+            <h2 class="text-4xl md:text-6xl font-bold text-white flex items-center gap-4 justify-center">
+              <i data-lucide="award" class="w-12 h-12 text-yellow-400"></i>
+              نجوم الفصل (لوحة الصدارة)
+            </h2>
+            <p class="text-xl md:text-3xl text-slate-300">اختر الفصل لعرض وتتويج الأوائل</p>
+            <div class="flex flex-col md:flex-row flex-wrap gap-8 md:gap-12 w-full md:w-auto items-center justify-center">
+              <button onclick="lbSetClass('G9A')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-indigo-600 to-purple-700 hover:scale-105 transition-all shadow-[0_0_40px_rgba(79,70,229,0.4)] flex flex-col items-center justify-center border-4 border-indigo-400 group">
+                <span class="text-5xl md:text-7xl font-black text-white">G9A</span>
+              </button>
+              <button onclick="lbSetClass('G9B')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-emerald-600 to-teal-700 hover:scale-105 transition-all shadow-[0_0_40px_rgba(16,185,129,0.4)] flex flex-col items-center justify-center border-4 border-emerald-400 group">
+                <span class="text-5xl md:text-7xl font-black text-white">G9B</span>
+              </button>
+              <button onclick="lbSetClass('G10A')" class="w-full max-w-[300px] aspect-square md:w-80 md:h-80 rounded-[3rem] bg-gradient-to-br from-orange-600 to-amber-600 hover:scale-105 transition-all shadow-[0_0_40px_rgba(234,88,12,0.4)] flex flex-col items-center justify-center border-4 border-orange-400 group">
+                <span class="text-5xl md:text-7xl font-black text-white">G10A</span>
+              </button>
+            </div>
+          </div>
+        `;
+      } else {
+        const currentStudents = classData[lb_selectedClass];
+        
+        // فرز الطلاب تنازلياً حسب النقاط
+        const sorted = [...currentStudents].sort((a, b) => lbGetScore(b) - lbGetScore(a));
+        const top5 = sorted.slice(0, 5);
+
+        // إعداد ترتيب وتصميم المنصات (المركز الرابع، الثاني، الأول، الثالث، الخامس) للعرض بشكل هرمي
+        const podiumConfig = [
+          { rank: 4, index: 3, height: 'h-32 md:h-40', color: 'bg-slate-700/80', border: 'border-slate-500', medal: 'text-slate-400' },
+          { rank: 2, index: 1, height: 'h-48 md:h-60', color: 'bg-slate-300/90', border: 'border-slate-200', medal: 'text-slate-200' },
+          { rank: 1, index: 0, height: 'h-64 md:h-80', color: 'bg-gradient-to-t from-yellow-600 to-yellow-400', border: 'border-yellow-200', medal: 'text-yellow-100' },
+          { rank: 3, index: 2, height: 'h-40 md:h-52', color: 'bg-orange-700/80', border: 'border-orange-500', medal: 'text-orange-300' },
+          { rank: 5, index: 4, height: 'h-24 md:h-32', color: 'bg-slate-700/80', border: 'border-slate-500', medal: 'text-slate-400' },
+        ];
+
+        let podiumHtml = podiumConfig.map(conf => {
+          const student = top5[conf.index];
+          if (!student) return '<div class="w-1/5 max-w-[120px]"></div>'; // مساحة فارغة إذا لم يكتمل العدد
+
+          // تعديل: استخدام png بدلاً من svg لتتوافق تماماً مع مكتبة التصدير html2canvas
+          const avatarUrl = `https://api.dicebear.com/7.x/adventurer/png?seed=${encodeURIComponent(student.name)}&backgroundColor=b6e3f4`;
+          const shortName = student.name.split(' ').slice(0, 2).join(' ');
+
+          return `
+            <div class="flex flex-col items-center justify-end w-1/5 max-w-[140px] px-1 animate-fade-in-up">
+              <div class="relative mb-2 md:mb-4 group">
+                <img src="${avatarUrl}" class="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 ${conf.border} shadow-lg bg-white transition-transform group-hover:scale-110" crossorigin="anonymous" />
+                <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 w-8 h-8 md:w-10 md:h-10 rounded-full font-black flex items-center justify-center text-white border-2 border-white shadow-md ${conf.color} ${conf.medal} text-sm md:text-lg z-20">
+                  ${conf.rank}
+                </div>
+              </div>
+              <div class="w-full ${conf.height} ${conf.color} rounded-t-xl md:rounded-t-3xl border-t-4 ${conf.border} shadow-2xl flex flex-col items-center justify-start pt-4 px-2 text-center relative overflow-hidden">
+                <div class="absolute inset-0 bg-white/10"></div>
+                <span class="text-xs md:text-lg font-bold text-slate-900 drop-shadow-sm z-10 leading-tight md:mb-1">${shortName}</span>
+                <span class="text-[10px] md:text-sm font-black text-slate-800 z-10 bg-white/30 px-2 rounded-full mt-1">${lbGetScore(student)} نقطة</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        let gridHtml = currentStudents.map((s) => {
+          return `
+            <div class="bg-slate-800 rounded-2xl p-4 border-2 border-slate-700 flex flex-col items-center text-center gap-3 hover:border-slate-500 transition-colors shadow-lg">
+              <span class="w-8 h-8 rounded-full bg-slate-700 text-slate-300 font-bold flex items-center justify-center shrink-0 shadow-inner">${s.num}</span>
+              <span class="text-white font-bold text-lg h-12 flex items-center leading-tight">${s.name.split(' ').slice(0, 3).join(' ')}</span>
+              
+              <div class="w-full bg-slate-900/50 p-2 md:p-3 rounded-xl flex flex-col xl:flex-row justify-between items-center gap-2 mt-auto border border-slate-700/50">
+                <span class="text-yellow-400 font-black text-2xl drop-shadow-md">${lbGetScore(s)}</span>
+                <div class="flex gap-1 md:gap-2">
+                  <button onclick="lbAddParticipation('${s.id}')" title="مشاركة مميزة" class="p-2 md:p-3 rounded-xl transition-all active:scale-95 border-b-4 bg-slate-700 border-slate-900 text-yellow-400 hover:bg-slate-600 hover:text-yellow-300">
+                    <i data-lucide="star" class="w-5 h-5 md:w-6 md:h-6"></i>
+                  </button>
+                  <button onclick="lbToggleTool('${s.id}')" title="أدوات كاملة" class="p-2 md:p-3 rounded-xl transition-all active:scale-95 border-b-4 ${s.toolsReady ? 'bg-indigo-500 border-indigo-700 text-white shadow-[0_0_15px_rgba(79,70,229,0.5)] translate-y-1 border-b-0' : 'bg-slate-700 border-slate-900 text-slate-400 hover:bg-slate-600'}">
+                    <i data-lucide="pen-tool" class="w-5 h-5 md:w-6 md:h-6"></i>
+                  </button>
+                  <button onclick="lbToggleAssessment('${s.id}')" title="إتمام التقييم" class="p-2 md:p-3 rounded-xl transition-all active:scale-95 border-b-4 ${s.assessmentDone ? 'bg-emerald-500 border-emerald-700 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)] translate-y-1 border-b-0' : 'bg-slate-700 border-slate-900 text-slate-400 hover:bg-slate-600'}">
+                    <i data-lucide="check-square" class="w-5 h-5 md:w-6 md:h-6"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        container.innerHTML = `
+          <div class="flex flex-col w-full h-full max-w-7xl mx-auto py-4 md:py-8 animate-fade-in px-2 md:px-0">
+            
+            <div class="flex flex-col lg:flex-row justify-between items-center gap-4 mb-8 bg-slate-800 p-4 md:p-6 rounded-3xl border border-slate-700 shadow-lg">
+              <div class="flex items-center gap-4 md:gap-6 w-full lg:w-auto">
+                <button onclick="lbSetClass(null)" class="bg-slate-700 hover:bg-slate-600 p-3 md:p-4 rounded-full text-white transition-colors">
+                  <i data-lucide="chevron-down" class="rotate-90 w-6 h-6 md:w-8 md:h-8"></i>
+                </button>
+                <h2 class="text-2xl md:text-4xl font-bold text-white flex items-center gap-3">
+                  <span class="text-yellow-400">${lb_selectedClass}</span> - تقييم ونجوم الفصل
+                </h2>
+              </div>
+              <div class="flex flex-col sm:flex-row w-full lg:w-auto gap-3">
+                <button onclick="lbDownloadImage()" class="flex-1 justify-center items-center gap-3 px-6 py-4 bg-gradient-to-r from-yellow-600 to-amber-500 hover:from-yellow-500 hover:to-amber-400 text-white rounded-2xl text-xl font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.4)] flex">
+                  <i data-lucide="camera" class="w-6 h-6"></i> تحميل صورة الأوائل
+                </button>
+                <button onclick="lbDownloadWordReport()" class="flex-1 justify-center items-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 text-white rounded-2xl text-xl font-bold transition-all shadow-[0_0_20px_rgba(59,130,246,0.4)] flex">
+                  <i data-lucide="file-text" class="w-6 h-6"></i> تقرير الدرجات (Word)
+                </button>
+              </div>
+            </div>
+
+            <!-- المنصة (Podium) -->
+            <div id="podium-capture" class="w-full flex flex-col items-center justify-end pt-12 pb-0 px-4 bg-slate-900 rounded-[2rem] md:rounded-[3rem] border-4 border-slate-700 relative overflow-hidden mb-8 shadow-2xl">
+              <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-900 to-slate-900"></div>
+              
+              <h2 class="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500 mb-8 md:mb-16 z-10 drop-shadow-xl text-center">
+                نجوم فصل ${lb_selectedClass} 🌟
+              </h2>
+              
+              <div class="flex items-end justify-center gap-1 md:gap-4 z-10 w-full max-w-5xl px-2">
+                ${podiumHtml}
+              </div>
+            </div>
+
+            <!-- لوحة تحكم التقييم السريع -->
+            <h3 class="text-2xl text-slate-300 font-bold mb-4 px-2">لوحة التقييم السريع (أدوات وتقييمات):</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 overflow-y-auto pb-24 custom-scrollbar pr-2">
+              ${gridHtml}
+            </div>
+
+          </div>
+        `;
+      }
+    }
+
+    window.lbSetClass = function(c) { lb_selectedClass = c; renderApp(); }
+    
+    window.lbToggleTool = function(studentId) {
+      const idx = classData[lb_selectedClass].findIndex(s => s.id === studentId);
+      if(idx > -1) {
+        classData[lb_selectedClass][idx].toolsReady = !classData[lb_selectedClass][idx].toolsReady;
+      }
+      renderApp();
+    }
+
+    window.lbToggleAssessment = function(studentId) {
+      const idx = classData[lb_selectedClass].findIndex(s => s.id === studentId);
+      if(idx > -1) {
+        classData[lb_selectedClass][idx].assessmentDone = !classData[lb_selectedClass][idx].assessmentDone;
+      }
+      renderApp();
+    }
+
+    window.lbAddParticipation = function(studentId) {
+      const idx = classData[lb_selectedClass].findIndex(s => s.id === studentId);
+      if(idx > -1) {
+        // زيادة درجة المشاركة بمقدار 1
+        classData[lb_selectedClass][idx].participationScore += 1;
+        // استخراج الاسم الأول والثاني فقط
+        const studentName = classData[lb_selectedClass][idx].name.split(' ').slice(0, 2).join(' ');
+        triggerCelebration(studentName);
+      }
+      renderApp();
+    }
+
+    function triggerCelebration(name) {
+      // 1. إظهار القصاصات الملونة
+      showConfetti();
+      
+      // 2. تشغيل صوت الاحتفال
+      playCelebrationSound();
+
+      // 3. إظهار الاسم بخط عريض بحركة تفاعلية
+      const overlay = document.getElementById('celebration-overlay');
+      const nameEl = document.getElementById('celebration-name');
+      if(overlay && nameEl) {
+        nameEl.innerText = name;
+        overlay.classList.remove('hidden-content');
+        
+        setTimeout(() => {
+          overlay.classList.add('hidden-content');
+        }, 2500); // إخفاء النافذة بعد ثانيتين ونصف
+      }
+    }
+
+    function playCelebrationSound() {
+      try {
+        if (!timer_audioContext) timer_audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = timer_audioContext;
+        if (ctx.state === 'suspended') ctx.resume();
+        
+        // 1. نغمة النجاح السريعة
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+        osc.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.2); // C6
+        
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 1);
+
+        // 2. محاكاة صوت التصفيق (عبر تقطيع ضوضاء بيضاء)
+        for(let i=0; i<8; i++) {
+          setTimeout(() => {
+              if (ctx.state === 'suspended') return;
+              const bufferSize = ctx.sampleRate * 0.15; 
+              const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+              const data = buffer.getChannelData(0);
+              // توليد ضوضاء
+              for (let j = 0; j < bufferSize; j++) { data[j] = Math.random() * 2 - 1; }
+              const noise = ctx.createBufferSource();
+              noise.buffer = buffer;
+              
+              // فلترة الضوضاء لتبدو مثل التصفيق
+              const noiseFilter = ctx.createBiquadFilter();
+              noiseFilter.type = 'bandpass';
+              noiseFilter.frequency.value = 1000 + (Math.random() * 500);
+              
+              const noiseGain = ctx.createGain();
+              noiseGain.gain.setValueAtTime(0.4, ctx.currentTime);
+              noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+              
+              noise.connect(noiseFilter);
+              noiseFilter.connect(noiseGain);
+              noiseGain.connect(ctx.destination);
+              noise.start(ctx.currentTime);
+          }, i * 50 + 100);
+        }
+      } catch (e) { console.error('Audio error:', e); }
+    }
+
+    window.lbDownloadImage = function() {
+      const target = document.getElementById('podium-capture');
+      if(!target) return;
+      
+      // إصلاح مشكلة تدرج النص: تغيير التنسيق لحظة الالتقاط
+      const titleEl = target.querySelector('h2');
+      const originalTitleClasses = titleEl.className;
+      titleEl.className = "text-3xl md:text-5xl font-black text-yellow-400 mb-8 md:mb-16 z-10 text-center";
+
+      const originalBorder = target.style.border;
+      target.style.border = 'none'; // إزالة الحدود الخارجية للصورة لتبدو أنظف
+
+      html2canvas(target, { 
+        backgroundColor: '#0f172a', 
+        scale: 2, 
+        useCORS: true // هام جداً للسماح بتحميل الصور من DiceBear
+      }).then(canvas => {
+        titleEl.className = originalTitleClasses; // إعادة تنسيق العنوان
+        target.style.border = originalBorder; // إعادة الحدود
+        const link = document.createElement('a');
+        link.download = `نجوم_فصل_${lb_selectedClass}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }).catch(err => {
+        titleEl.className = originalTitleClasses; // إعادة تنسيق العنوان في حالة الخطأ
+        target.style.border = originalBorder;
+        console.error("Error capturing podium:", err);
+        alert("حدث خطأ أثناء التقاط الصورة. يرجى المحاولة مرة أخرى.");
+      });
+    }
+
+    window.lbDownloadWordReport = function() {
+      if (!lb_selectedClass) return;
+
+      const currentStudents = classData[lb_selectedClass];
+      const sortedStudents = [...currentStudents].sort((a, b) => lbGetScore(b) - lbGetScore(a));
+
+      let tableRows = sortedStudents.map((s, index) => {
+        return `
+          <tr>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${index + 1}</td>
+            <td style="border: 1px solid #000; padding: 8px;">${s.name}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; color: #047857;">${lbGetScore(s)}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${s.toolsReady ? '✅ نعم' : '❌ لا'}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${s.assessmentDone ? '✅ نعم' : '❌ لا'}</td>
+          </tr>
+        `;
+      }).join('');
+
+      let htmlContent = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40' dir="rtl">
+        <head>
+          <meta charset="utf-8">
+          <title>تقرير درجات الفصل</title>
+          <style>
+            body { font-family: 'Arial', 'Tahoma', sans-serif; direction: rtl; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background-color: #f1f5f9; border: 2px solid #000; padding: 12px; font-size: 16px; }
+            td { font-size: 14px; }
+            h1 { text-align: center; color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; }
+            .date-stamp { text-align: left; color: #64748b; font-size: 12px; margin-bottom: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>تقرير درجات ونجوم الفصل: ${lb_selectedClass}</h1>
+          <div class="date-stamp">تاريخ التقرير: ${new Date().toLocaleDateString('ar-EG')}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>الترتيب</th>
+                <th>اسم الطالب</th>
+                <th>إجمالي النقاط</th>
+                <th>إحضار الأدوات</th>
+                <th>إتمام التقييم</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      // إضافة (BOM) لضمان تعرف Microsoft Word على اللغة العربية بترميز UTF-8
+      const blob = new Blob(['\ufeff', htmlContent], {
+          type: 'application/msword'
+      });
+      const url = URL.createObjectURL(blob);
+      const filename = `تقرير_درجات_${lb_selectedClass}_${new Date().toLocaleDateString('ar-EG').replace(/\//g, '-')}.doc`;
+
+      const downloadLink = document.createElement("a");
+      downloadLink.href = url;
+      downloadLink.download = filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(url);
+    }
+
+    window.onload = function() {
+      renderApp();
+    };
+
+  </script>
+</body>
+</html>
